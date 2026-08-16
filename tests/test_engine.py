@@ -91,8 +91,21 @@ def test_rueckblick_ist_moeglich_und_monoton():
 # Einzelstart
 # ----------------------------------------------------------------------
 def test_startabstand_betraegt_zehn_minuten():
+    # Die Testfahrer haben aufsteigende FTP bei gleichem Gewicht — die
+    # Setzliste läuft damit parallel zur Fahrer-Reihenfolge.
     race = rennen(n=6)
     assert np.array_equal(race.start_offset_s, np.arange(6) * 600.0)
+
+
+def test_setzliste_stellt_den_staerksten_nach_hinten():
+    teams, riders = kleines_feld(4)
+    # Reihenfolge der Liste bewusst gegen die Stärke gedreht.
+    gedreht = list(reversed(riders))
+    race = LiveRace(kurzstrecke(), gedreht, teams, RaceConfig(name="Setzliste", seed=1))
+    wkg = [r.ftp_w / r.weight_kg for r in gedreht]
+    reihenfolge = np.argsort(race.start_offset_s)
+    assert [wkg[i] for i in reihenfolge] == sorted(wkg)
+    assert sorted(race.start_offset_s.tolist()) == [0.0, 600.0, 1200.0, 1800.0]
 
 
 def test_wer_nicht_gestartet_ist_faehrt_nicht():
@@ -132,6 +145,22 @@ def test_wertung_folgt_der_eigenzeit_nicht_der_ankunft():
     assert staerkster == 5, "Testaufbau: der letzte Starter hat die höchste FTP"
     assert int(np.argmin(race.finish_time_s)) == staerkster
     assert int(np.argmin(race.finish_wall_s)) != staerkster
+
+
+def test_zeitstrahl_reicht_ueber_den_letzten_starter_hinaus():
+    """Der Horizont muss den spätesten Start enthalten, nicht den letzten
+    Eintrag der Fahrerliste.
+
+    Seit die Setzliste nach Stärke sortiert, sind das zwei verschiedene
+    Fahrer — und mit ``start_offset_s[-1]`` endete der Zeitstrahl vor
+    dem Rennen, sodass die Wiedergabe nie ins Ziel kam.
+    """
+    teams, riders = kleines_feld(6)
+    gedreht = list(reversed(riders))  # der Stärkste steht jetzt vorn
+    race = LiveRace(kurzstrecke(km=120), gedreht, teams, RaceConfig("Horizont", 1))
+    assert race.horizon_s > race.start_offset_s.max()
+    race.advance_to(race.horizon_s)
+    assert race.finished, "bis zum Horizont muss das Rennen durch sein"
 
 
 def test_massenstart_bleibt_moeglich():

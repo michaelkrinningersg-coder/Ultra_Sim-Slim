@@ -18,8 +18,9 @@ python -m ultraslim.app          # startet den Server und öffnet den Browser
 - **6 Rennen** je Saison, 300 bis 1000 km, von flach bis Hochgebirge.
 - **3 Saisons** über dieselben Strecken — was sich unterscheidet, ist die
   Tagesform des Feldes.
-- **Einzelstart im Zehn-Minuten-Takt**, teamweise verzahnt. Gewertet wird
-  die gefahrene Eigenzeit.
+- **Einzelstart im Zehn-Minuten-Takt**, gesetzt nach relativer FTP: der
+  Schwächste zuerst, der Stärkste zuletzt. Gewertet wird die gefahrene
+  Eigenzeit.
 - Live-Interface mit Ticker, Startliste, Höhenprofil und Telemetrie-Board,
   Zeitraffer bis 1000×, Vor- und Rücksprung.
 - Fahrer- und Teamwertung über die Saison.
@@ -95,7 +96,12 @@ Zwei Uhren, und sie zu verwechseln macht jede Rangliste falsch:
 
 Bei 300 Fahrern im Zehn-Minuten-Takt umfasst allein das Startfenster
 knapp **50 Stunden**: Der letzte Starter rollt los, wenn der erste längst
-im Ziel ist.
+im Ziel ist. Beim Alpen-Rennen läuft die Rennuhr damit über hundert
+Stunden — bei 1000× sind das gut sechs Minuten Zuschauen.
+
+Gesetzt wird nach relativer FTP, der Stärkste startet zuletzt. Die
+Setzliste ist dabei die Papierform, nicht das Ergebnis: Sie kennt FTP und
+Gewicht, aber weder die Tagesform noch das Gelände.
 
 Zwei Wertungen im Board:
 
@@ -142,7 +148,7 @@ Kein Node, kein Build-Schritt. Alpine.js liegt als Datei bei.
 
 ```
 pip install -r requirements-dev.txt
-pytest -q                                   # 105 Tests
+pytest -q                                   # 108 Tests
 python -m ultraslim.app --no-browser        # Server ohne Browser
 ```
 

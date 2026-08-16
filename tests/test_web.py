@@ -98,22 +98,20 @@ def test_startliste_traegt_die_startzeiten(laufendes_rennen):
     assert daten["start_interval_s"] == 600.0
     eintraege = daten["entries"]
     assert len(eintraege) == 300
-    # Teamweise verzahnt: Fahrer 0 (Team 0) startet zuerst, Fahrer 12
-    # (der erste des zweiten Teams) zehn Minuten später, und der zweite
-    # Fahrer des ersten Teams erst nach der ganzen ersten Runde.
-    assert eintraege[0]["start_offset_s"] == 0.0
-    assert eintraege[12]["start_offset_s"] == 600.0
-    assert eintraege[1]["start_offset_s"] == 25 * 600.0
     versaetze = sorted(e["start_offset_s"] for e in eintraege)
     assert versaetze == [i * 600.0 for i in range(300)], "keine Lücken, keine Dubletten"
     assert {"ftp_w", "weight_kg", "height_cm", "nation", "team", "color"} <= set(eintraege[0])
 
 
-def test_erste_startrunde_bringt_jedes_team_ins_bild(laufendes_rennen):
-    """Die ersten fünfundzwanzig Starter sind fünfundzwanzig Teams."""
+def test_der_staerkste_startet_zuletzt(laufendes_rennen):
+    """Setzliste nach relativer FTP: der Schwächste rollt zuerst los."""
     eintraege = laufendes_rennen.get(f"/api/race/{RACE_ID}/startlist").json()["entries"]
-    erste_runde = sorted(eintraege, key=lambda e: e["start_offset_s"])[:25]
-    assert len({e["team"] for e in erste_runde}) == 25
+    nach_start = sorted(eintraege, key=lambda e: e["start_offset_s"])
+    wkg = [e["w_per_kg"] for e in nach_start]
+    assert wkg == sorted(wkg), "die Startfolge muss der relativen FTP folgen"
+    assert nach_start[0]["start_offset_s"] == 0.0
+    assert nach_start[-1]["start_offset_s"] == 299 * 600.0
+    assert wkg[-1] > wkg[0] + 1.5, "zwischen erstem und letztem Starter liegen Welten"
 
 
 def test_erstes_bild_zeigt_nur_den_ersten_starter(token, laufendes_rennen):
@@ -123,6 +121,15 @@ def test_erstes_bild_zeigt_nur_den_ersten_starter(token, laufendes_rennen):
     assert bild["field"]["waiting"] == 299
     assert len(bild["positions"]) == 1, "Wartende gehören nicht ins Höhenprofil"
     assert bild["board"]["rows"], "das Board darf nie leer sein"
+
+
+def test_der_fokus_beginnt_bei_jemandem_der_faehrt(token, laufendes_rennen):
+    """Ein Rennen, das mit 'wartet auf Start' aufgeht, zeigt nichts."""
+    bild = laufendes_rennen.get(f"/api/playback/{token}/frame").json()
+    fokus = bild["focus"]
+    assert fokus["started"] is True
+    assert fokus["start_offset_s"] == 0.0
+    assert fokus["state"] != -1
 
 
 def test_bild_verraet_keine_zukunft(token, laufendes_rennen):

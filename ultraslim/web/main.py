@@ -280,6 +280,7 @@ def create_app(data_dir: str | Path = "data") -> FastAPI:
                     "ftp_w": round(r.ftp_w),
                     "weight_kg": round(r.weight_kg, 1),
                     "height_cm": round(r.height_cm),
+                    "w_per_kg": round(r.w_per_kg, 2),
                     "start_offset_s": round(float(offsets[k]), 1),
                 }
                 for k, r in enumerate(room.riders)

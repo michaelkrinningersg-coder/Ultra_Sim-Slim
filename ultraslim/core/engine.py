@@ -222,11 +222,10 @@ class LiveRace:
         self.base_power = self.ftp * self.intensity_factor * self.form
 
         # --- Start ------------------------------------------------------
-        # Einzelstart, aber **teamweise verzahnt**: erst je ein Fahrer
-        # jedes Teams, dann die nächste Runde. Nach Startnummern sortiert
-        # wären die ersten fünfundzwanzig Starter alle aus demselben
-        # Team — die ersten vier Stunden Übertragung zeigten dann eine
-        # Mannschaft statt eines Feldes.
+        # Einzelstart wie im Zeitfahren: **der Schwächste zuerst, der
+        # Stärkste zuletzt**. Damit fällt die Entscheidung am Ende der
+        # Übertragung und nicht in ihrer Mitte — wer als Letzter losrollt,
+        # kennt die Zeit, die er schlagen muss.
         #
         # Die Engine rechnet in Rennuhr; was ein Fahrer auf seiner
         # eigenen Uhr hat, ist die Rennuhr minus seinem Startversatz.
@@ -259,14 +258,22 @@ class LiveRace:
         self._gen = self._run()
 
     def _start_order(self) -> np.ndarray:
-        """Startposition je Fahrer: erst je einer pro Team, dann Runde zwei."""
-        n_teams = max((r.team_id for r in self.riders), default=0) + 1
-        gezaehlt: dict[int, int] = {}
+        """Startposition je Fahrer, nach relativer FTP aufsteigend.
+
+        Die Setzliste ist die Papierform, nicht das Ergebnis: Sie kennt
+        FTP und Gewicht, aber nicht die Tagesform und nicht das Gelände.
+        Deshalb ist sie eine Startreihenfolge und keine Vorhersage — der
+        Stärkste auf dem Papier startet zuletzt und verliert trotzdem
+        regelmäßig.
+
+        Gleichstand entscheidet die Startnummer, damit die Reihenfolge
+        reproduzierbar ist.
+        """
+        wkg = np.array([r.ftp_w / r.weight_kg for r in self.riders], dtype=np.float64)
+        bibs = np.array([r.bib for r in self.riders])
+        gesetzt = np.lexsort((bibs, wkg))  # erst nach W/kg, dann nach Nummer
         positions = np.empty(len(self.riders), dtype=np.float64)
-        for i, rider in enumerate(self.riders):
-            runde = gezaehlt.get(rider.team_id, 0)
-            gezaehlt[rider.team_id] = runde + 1
-            positions[i] = runde * n_teams + rider.team_id
+        positions[gesetzt] = np.arange(len(self.riders), dtype=np.float64)
         return positions
 
     # ------------------------------------------------------------------
@@ -466,7 +473,9 @@ class LiveRace:
         """
         if self.finished:
             return float(np.nanmax(self.finish_wall_s))
-        return float(self.start_offset_s[-1]) + self._estimated_duration_s
+        # ``max``, nicht ``[-1]``: Seit die Setzliste nach Stärke sortiert,
+        # ist der letzte Fahrer der Liste nicht mehr der letzte Starter.
+        return float(self.start_offset_s.max()) + self._estimated_duration_s
 
     @property
     def _estimated_duration_s(self) -> float:

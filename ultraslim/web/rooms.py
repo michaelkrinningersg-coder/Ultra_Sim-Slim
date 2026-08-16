@@ -613,7 +613,14 @@ class SessionRegistry:
 
     def create(self, room: LiveRoom) -> ViewSession:
         token = secrets.token_urlsafe(12)
-        session = ViewSession(token=token, room=room, focus_id=room.riders[0].id)
+        # Der Fokus beginnt beim ersten Starter, nicht bei Startnummer 1.
+        # Seit die Setzliste nach Stärke sortiert, sind das verschiedene
+        # Fahrer — und ein Rennen, das mit „wartet auf Start" aufgeht,
+        # zeigt beim Aufschlagen nichts.
+        erster = min(
+            range(len(room.riders)), key=lambda i: float(room.live.start_offset_s[i])
+        )
+        session = ViewSession(token=token, room=room, focus_id=room.riders[erster].id)
         self._sessions[token] = session
         while len(self._sessions) > self._max:
             self._sessions.pop(next(iter(self._sessions)), None)
