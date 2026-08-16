@@ -81,9 +81,9 @@
             <div class="item"><span class="k">Startzeit</span>
               <span class="v" x-text="hms(focus.start_offset_s)"></span></div>
             <div class="item"><span class="k">Gefahren<span class="u">km</span></span>
-              <span class="v" x-text="(focus.dist_m/1000).toFixed(1)"></span></div>
+              <span class="v" x-text="(focusDist/1000).toFixed(1)"></span></div>
             <div class="item"><span class="k">Rest<span class="u">km</span></span>
-              <span class="v" x-text="(focus.remaining_m/1000).toFixed(1)"></span></div>
+              <span class="v" x-text="(focusRemaining/1000).toFixed(1)"></span></div>
             <div class="item"><span class="k">Tempo<span class="u">km/h</span></span>
               <span class="v" x-text="focus.v_kmh.toFixed(1)"></span></div>
             <div class="item"><span class="k">Steigung<span class="u">%</span></span>
@@ -335,10 +335,12 @@
         </tbody>
       </table>
       <div class="faint" style="font-size:.72rem;margin-top:.4rem">
-        Kursiv = hochgerechnet. In der Splitwertung ist das die gefahrene Eigenzeit plus die
-        Reststrecke bis zur Messstelle beim aktuellen Tempo; in der virtuellen Rangliste
-        dasselbe bis ins Ziel. Gewertet wird immer die <strong>Eigenzeit</strong> — beim
-        Einzelstart im Zehn-Minuten-Takt sagt die Rennuhr nur, wann etwas zu sehen war.
+        Kursiv = Zeitmessung noch nicht erreicht. Die Zeit ist dann die <strong>laufende
+        Uhr</strong> des Fahrers: Er steht oben, solange er die Bestzeit noch schlagen kann,
+        und wandert nach unten, sobald seine Uhr eine gefahrene Zeit überholt — live, nicht
+        erst beim nächsten Bild. In der virtuellen Rangliste steht statt der Uhr die
+        hochgerechnete Endzeit. Gewertet wird immer die <strong>Eigenzeit</strong>; beim
+        Einzelstart sagt die Rennuhr nur, wann etwas zu sehen war.
         Das Board zeigt vierzig Zeilen um den Fokusfahrer; der Führende steht immer oben.
       </div>
     </div>

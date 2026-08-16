@@ -366,7 +366,7 @@ class ViewSession:
         lo = max(0, centre - BOARD_WINDOW // 2)
         window = order[lo : lo + BOARD_WINDOW]
 
-        leader_entry = order[0] if order else None
+        leader_entry = self._leader_entry(order, rows_all, reached)
         split = route.splits[self.split_idx]
 
         return {
@@ -420,20 +420,22 @@ class ViewSession:
         own = live.own_time(t)
 
         if self.mode == "split":
-            # Splitwertung: gemessene Zeit, sonst die **hochgerechnete**.
+            # Splitwertung: gemessene Zeit, sonst die **laufende Uhr**.
             #
-            # Nicht die laufende Uhr, und das ist der Unterschied zum
-            # Massenstart: Wer vor fünf Minuten losgefahren ist, hat
-            # dreihundert Sekunden auf der Uhr und stünde damit vor
-            # jeder gemessenen Zeit — bei fünfzig Stunden Startfenster
-            # wäre die Spitze der Tabelle dauerhaft mit Fahrern belegt,
-            # die noch nicht einmal den ersten Kilometer hinter sich
-            # haben. Also: gefahrene Eigenzeit plus die Reststrecke bis
-            # zur Messstelle beim aktuellen Tempo.
+            # Keine Hochrechnung. Wer die Messstelle noch vor sich hat,
+            # steht mit dem da, was seine Uhr gerade zeigt — und die
+            # zählt weiter. Er startet damit ganz oben und wandert nach
+            # unten, sobald seine Uhr eine gefahrene Zeit überholt. Das
+            # ist die Live-Zeitnahme, wie sie an der Strecke steht: Der
+            # Fahrer hat die Zeit noch nicht verloren, solange die Uhr
+            # sie nicht abgelaufen hat.
+            #
+            # Zwischen zwei Bildern sortiert der Client selbst nach, sonst
+            # ruckelte die Rangfolge im Takt des Ereignisstroms.
             s = self.split_idx
             has = reached[:, s]
-            times = np.where(has, split_times[:, s], self._hochrechnung(own, dist, route.splits[s].dist_m))
-            running = np.zeros_like(started)
+            times = np.where(has, split_times[:, s], own)
+            running = started & ~has
             provisional = ~has
             best = float(np.min(times[has])) if np.any(has) else 0.0
             gaps = times - best
@@ -482,6 +484,37 @@ class ViewSession:
                 "rank": 0,
             }
         return rows
+
+    def _leader_entry(self, order: list[int], rows: dict[int, dict], reached) -> int | None:
+        """Wer in der angehefteten Kopfzeile steht.
+
+        In der Splitwertung **der Halter der besten gefahrenen Zeit** —
+        nicht Rang eins. Rang eins ist dort regelmäßig ein Fahrer, dessen
+        Uhr erst fünf Minuten läuft; er steht oben, weil er die Bestzeit
+        noch schlagen *kann*, nicht weil er sie geschlagen *hat*. Die
+        Rückstandsspalte misst gegen die beste gefahrene Zeit, und die
+        Kopfzeile muss zeigen, worauf sich diese Zahlen beziehen.
+
+        In der virtuellen Rangliste bleibt es Rang eins: Dort ist jede
+        Zeit eine Hochrechnung, es gibt also keine gemessene Referenz.
+        """
+        if not order:
+            return None
+        if self.mode != "split":
+            return order[0]
+
+        # Nach der Zeit gesucht, nicht nach der Position in ``order``:
+        # Sortiert der Zuschauer gerade nach Tempo, stünde dort sonst der
+        # schnellste Fahrer statt des schnellsten Durchgangs.
+        durch = reached[:, self.split_idx]
+        gemessen = [
+            entry
+            for i, entry in enumerate(r.id for r in self.room.riders)
+            if durch[i] and rows[entry]["t_s"] is not None
+        ]
+        if not gemessen:
+            return order[0]
+        return min(gemessen, key=lambda e: rows[e]["t_s"])
 
     @staticmethod
     def _hochrechnung(own: np.ndarray, dist: np.ndarray, ziel_m: float) -> np.ndarray:

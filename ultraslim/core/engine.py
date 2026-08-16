@@ -124,6 +124,10 @@ class RaceConfig:
     #: Wird aus der Distanz abgeleitet, kann aber überschrieben werden.
     intensity_factor: float | None = None
     start_interval_s: float = START_INTERVAL_S
+    #: Stand der Saisonwertung **vor** diesem Rennen, ``rider_id → Punkte``.
+    #: Bestimmt die Setzliste. Fehlt sie oder ist sie leer, entscheidet
+    #: allein die relative FTP.
+    season_points: dict[int, int] | None = None
 
 
 def intensity_for_distance(distance_km: float) -> float:
@@ -258,20 +262,31 @@ class LiveRace:
         self._gen = self._run()
 
     def _start_order(self) -> np.ndarray:
-        """Startposition je Fahrer, nach relativer FTP aufsteigend.
+        """Startposition je Fahrer: Saisonpunkte aufsteigend, dann FTP.
+
+        Wer in der Saisonwertung vorn steht, startet zuletzt — die
+        Entscheidung fällt damit am Ende der Übertragung und nicht in
+        ihrer Mitte. Vor dem ersten Rennen haben alle null Punkte, und
+        dann setzt die relative FTP die Reihenfolge; sie trennt auch
+        Punktgleichheit, die bei dreihundert Fahrern und einer
+        Punkteliste bis Rang 150 die Regel ist, nicht die Ausnahme.
 
         Die Setzliste ist die Papierform, nicht das Ergebnis: Sie kennt
-        FTP und Gewicht, aber nicht die Tagesform und nicht das Gelände.
-        Deshalb ist sie eine Startreihenfolge und keine Vorhersage — der
-        Stärkste auf dem Papier startet zuletzt und verliert trotzdem
+        Punkte, FTP und Gewicht, aber nicht die Tagesform und nicht das
+        Gelände. Der Gesetzte startet zuletzt und verliert trotzdem
         regelmäßig.
 
-        Gleichstand entscheidet die Startnummer, damit die Reihenfolge
+        Ganz zuletzt entscheidet die Startnummer, damit die Reihenfolge
         reproduzierbar ist.
         """
+        punkte_je_fahrer = self.config.season_points or {}
+        punkte = np.array(
+            [punkte_je_fahrer.get(r.id, 0) for r in self.riders], dtype=np.float64
+        )
         wkg = np.array([r.ftp_w / r.weight_kg for r in self.riders], dtype=np.float64)
         bibs = np.array([r.bib for r in self.riders])
-        gesetzt = np.lexsort((bibs, wkg))  # erst nach W/kg, dann nach Nummer
+        # ``lexsort`` sortiert nach dem *letzten* Schlüssel zuerst.
+        gesetzt = np.lexsort((bibs, wkg, punkte))
         positions = np.empty(len(self.riders), dtype=np.float64)
         positions[gesetzt] = np.arange(len(self.riders), dtype=np.float64)
         return positions

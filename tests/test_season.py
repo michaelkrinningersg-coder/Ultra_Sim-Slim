@@ -8,6 +8,7 @@ from ultraslim.core.rider import generate_pool
 from ultraslim.core.season import (
     CALENDAR,
     POINTS,
+    SCORING_PLACES,
     RaceResult,
     Store,
     all_seasons,
@@ -52,13 +53,25 @@ def test_rennkennung_ist_eindeutig():
     assert len(ids) == len(all_seasons()) * len(CALENDAR)
 
 
-def test_punkte_fuer_die_top_zwanzig():
-    assert len(POINTS) == 20
+def test_punkte_bis_rang_hundertfuenfzig():
+    assert len(POINTS) == SCORING_PLACES == 150
     assert points_for_rank(1) == 100
     assert points_for_rank(20) == 8
-    assert points_for_rank(21) == 0
+    assert points_for_rank(150) == 1
+    # Danach ist Schluss, und davor gibt es keinen Rang null.
+    assert points_for_rank(151) == 0
     assert points_for_rank(0) == 0
-    assert list(POINTS) == sorted(POINTS, reverse=True)
+    assert points_for_rank(-3) == 0
+
+
+def test_die_punktekurve_faellt_und_hat_keine_klippe():
+    assert list(POINTS) == sorted(POINTS, reverse=True), "monoton fallend"
+    assert min(POINTS) == 1, "der letzte Punkterang ist noch etwas wert"
+    # Der Übergang von der Handliste in die Kurve darf nicht springen.
+    assert POINTS[19] - POINTS[20] == 1
+    # Oben steiler als unten: Zwischen Rang 25 und 35 liegt mehr als
+    # zwischen 130 und 140.
+    assert (POINTS[24] - POINTS[34]) > (POINTS[129] - POINTS[139])
 
 
 def test_nachschlagen_unbekannter_kennungen():
@@ -105,7 +118,7 @@ def test_rangliste_zaehlt_punkte_siege_und_podien(pool):
     # Wer beide Rennen gewonnen hat, gibt es hier nicht — aber der
     # Gesamtführende muss einen Sieg und ein Podium haben.
     erster = tabelle[0]
-    assert erster.points == 100 + 0 or erster.wins >= 1
+    assert erster.wins >= 1 or erster.points > 0
     assert erster.starts == 2
     assert len(erster.per_race) == len(CALENDAR)
     assert sum(erster.per_race) == erster.points
@@ -125,7 +138,7 @@ def test_punktgleichheit_wird_ueber_siege_getrennt(pool):
         "toskana": RaceResult("s2026", "toskana", [(b, 100.0), (a, 101.0)]),
     }
     tabelle = [s for s in rider_standings(ergebnisse, riders, teams) if s.rider.id in (a, b)]
-    assert {s.points for s in tabelle} == {180}
+    assert {s.points for s in tabelle} == {100 + POINTS[1]}
     assert {s.wins for s in tabelle} == {1}
     assert tabelle[0].rider.bib < tabelle[1].rider.bib
 

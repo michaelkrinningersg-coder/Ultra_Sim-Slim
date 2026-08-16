@@ -36,7 +36,7 @@
           <td class="right mono faint">{{ r.rider.ftp_w|round|int }}</td>
           <td class="right mono faint">{{ '%.1f'|format(r.rider.weight_kg) }}</td>
           <td class="right mono faint">{{ '%.2f'|format(r.rider.w_per_kg) }}</td>
-          <td class="right mono">{% if r.rank <= 20 %}{{ [100,80,65,55,50,45,40,36,32,28,26,24,22,20,18,16,14,12,10,8][r.rank-1] }}{% endif %}</td>
+          <td class="right mono">{{ r.points or '' }}</td>
         </tr>
         {% endfor %}
       </tbody>

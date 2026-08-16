@@ -19,11 +19,39 @@ from pathlib import Path
 from .rider import Rider, Team
 from .route import Route, generate_route
 
-#: Punkte für die Ränge eins bis zwanzig. Danach gibt es keine mehr.
-POINTS: tuple[int, ...] = (
+#: So viele Fahrer eines Rennens bekommen Punkte.
+SCORING_PLACES = 150
+
+#: Die Punkte der Ränge eins bis zwanzig, von Hand gesetzt. Steil oben,
+#: damit ein Sieg zählt.
+TOP_POINTS: tuple[int, ...] = (
     100, 80, 65, 55, 50, 45, 40, 36, 32, 28,
     26, 24, 22, 20, 18, 16, 14, 12, 10, 8,
 )
+
+#: Der Rest bis Rang 150, als abklingende Kurve statt als Zahlenwüste.
+#:
+#: Sie beginnt bei sieben (Rang 20 hat acht) und endet bei eins. Der
+#: Exponent 1,5 macht sie oben steiler als unten: Zwischen Rang 25 und
+#: 35 liegt spürbar mehr als zwischen 130 und 140, und das ist auch
+#: richtig so. Der Sockel von einem Punkt sorgt dafür, dass Rang 150
+#: noch etwas wert ist — sonst wäre die Grenze eine Klippe statt eines
+#: Auslaufs.
+_TAIL_TOP = 6
+_TAIL_EXP = 1.5
+
+
+def _build_points() -> tuple[int, ...]:
+    tail_span = SCORING_PLACES - len(TOP_POINTS) - 1
+    tail = [
+        round(_TAIL_TOP * ((SCORING_PLACES - rank) / tail_span) ** _TAIL_EXP) + 1
+        for rank in range(len(TOP_POINTS) + 1, SCORING_PLACES + 1)
+    ]
+    return TOP_POINTS + tuple(tail)
+
+
+#: Punkte je Rang, Index null ist Rang eins.
+POINTS: tuple[int, ...] = _build_points()
 
 
 def points_for_rank(rank: int) -> int:
@@ -289,6 +317,8 @@ def team_standings(
 __all__ = [
     "CALENDAR",
     "POINTS",
+    "TOP_POINTS",
+    "SCORING_PLACES",
     "RaceSpec",
     "RaceResult",
     "Season",

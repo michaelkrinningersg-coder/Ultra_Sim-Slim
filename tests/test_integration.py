@@ -86,7 +86,7 @@ def test_saisontabelle_fuellt_sich(gefahrene_saison):
     assert fahrer[0].points == 100
     assert fahrer[0].wins == 1
     assert sum(f.points for f in fahrer) == sum(POINTS)
-    assert sum(1 for f in fahrer if f.points > 0) == 20
+    assert sum(1 for f in fahrer if f.points > 0) == 150
 
     mannschaften = team_standings(ergebnisse, riders, teams)
     assert sum(t.points for t in mannschaften) == sum(POINTS)

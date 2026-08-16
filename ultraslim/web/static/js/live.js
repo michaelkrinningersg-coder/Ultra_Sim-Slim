@@ -103,8 +103,13 @@ function raceLive(raceId) {
     clockBase: 0,
     clockStamp: 0,
     tickNow: 0,
+    //: Grober Takt für Rangfolge und Höhenprofil, siehe ``sortDelta``.
+    sortNow: 0,
     raf: null,
     _collapsed: [],
+    _sortStamp: 0,
+    _drawStamp: 0,
+    _neighbours: [],
 
     get focus() { return this.frame ? this.frame.focus : null; },
 
@@ -127,6 +132,22 @@ function raceLive(raceId) {
     get liveDelta() {
       return this.frame ? this.liveWall - this.frame.t_wall : 0;
     },
+
+    /* Derselbe Vorlauf, aber nur viermal je Sekunde neu.
+     *
+     * Ziffern dürfen mit dem Bildschirmtakt laufen — das ist eine
+     * Textänderung. Die Tabelle *umzusortieren* heißt, vierzig
+     * Tabellenzeilen im DOM zu verschieben, und das sechzigmal je
+     * Sekunde wäre Arbeit für nichts: Schneller als das Auge folgen kann
+     * muss keine Rangliste sein.
+     */
+    get sortDelta() {
+      if (!this.frame || !this.frame.playing) return 0;
+      const speed = this.frame.speed;
+      const interval = speed <= 10 ? 0.25 : speed <= 60 ? 0.5 : 1.0;
+      const ahead = Math.max((this.sortNow - this.clockStamp) / 1000, 0) * speed;
+      return Math.min(ahead, interval * 1.2 * speed);
+    },
     get liveOwnTime() {
       if (!this.focus) return null;
       // Nur mitzählen, solange er wirklich unterwegs ist. Wer noch nicht
@@ -135,6 +156,16 @@ function raceLive(raceId) {
       // im Ziel ist, hat eine feste Zeit.
       return this.focus.own_time_s + (this.focus.state === 0 ? this.liveDelta : 0);
     },
+    //: Kilometer des Fokusfahrers, mitlaufend wie im Board.
+    get focusDist() {
+      if (!this.focus) return 0;
+      return this.focus.dist_m + (this.focus.v_kmh / 3.6) * this.liveDelta;
+    },
+    get focusRemaining() {
+      if (!this.focus) return 0;
+      return Math.max(this.focus.dist_m + this.focus.remaining_m - this.focusDist, 0);
+    },
+
     get latest() { return this.visibleTicker.slice(0, 10); },
     get visibleTicker() {
       return this.ticker.filter((e) => {
@@ -157,7 +188,38 @@ function raceLive(raceId) {
     toggleFocusOnly() { this.focusOnly = !this.focusOnly; this.rememberFilter(); },
 
     get board() { return this.frame ? this.frame.board : null; },
-    get rows() { return this.board ? this.board.rows : []; },
+
+    /* Die Tabellenzeilen — in der Splitwertung zwischen zwei Bildern
+     * selbst nachsortiert.
+     *
+     * Der Server ordnet nach dem Stand seines letzten Bildes. Wessen Uhr
+     * noch läuft, dessen Zeit wächst aber weiter, und bei 1000× sind
+     * das zwischen zwei Bildern über sechzehn Minuten — die Rangfolge
+     * stimmte dann eine ganze Sekunde lang sichtbar nicht. Hier wandert
+     * ein Fahrer nach unten, sobald seine laufende Uhr eine gefahrene
+     * Zeit überholt, und nicht erst beim nächsten Bild.
+     *
+     * Sortiert wird nur innerhalb des Ausschnitts, den der Server
+     * geschickt hat, und die Rangnummern dieses Ausschnitts werden neu
+     * verteilt. Wer über den Rand hinauswandert, wird beim nächsten Bild
+     * eingefangen.
+     */
+    get rows() {
+      const raw = this.board ? this.board.rows : [];
+      if (!this.isSplitMode || !this.frame || this.frame.sort !== 'zeit' || this.frame.sort_desc) {
+        return raw;
+      }
+      if (!raw.some((r) => r.running)) return raw;
+
+      const delta = this.sortDelta;
+      const zeit = (r) =>
+        r.t_s === null ? Infinity : r.t_s + (r.running ? delta : 0);
+      const raenge = raw.map((r) => r.rank).sort((a, b) => a - b);
+      return raw
+        .slice()
+        .sort((a, b) => zeit(a) - zeit(b))
+        .map((r, i) => (r.rank === raenge[i] ? r : { ...r, rank: raenge[i] }));
+    },
     get pinnedRows() { return this.board && this.board.pinned ? this.board.pinned : []; },
     //: Der Abstand zwischen den beiden angehefteten Fahrern — das
     //: einzige, was ein Duell wirklich ausmacht.
@@ -221,20 +283,35 @@ function raceLive(raceId) {
       return row.running ? row.t_s + this.liveDelta : row.t_s;
     },
 
-    //: Meter bis zur nächsten Zeitmessung.
+    /* Die gefahrenen Kilometer, zwischen zwei Bildern weitergeschrieben.
+     *
+     * Bei 1000× schickt der Server ein Bild je Sekunde, und dazwischen
+     * legt ein Fahrer über acht Kilometer zurück. Ohne diese Zeile
+     * sprang die Spalte im Sekundentakt um acht Kilometer und stand
+     * dazwischen still. Gerechnet wird nichts: Der Vorlauf ist auf das
+     * nächste erwartete Bild gedeckelt, genau wie bei der Uhr.
+     */
+    rowDist(row) {
+      return row.dist_km + (row.v_kmh * this.liveDelta) / 3600;
+    },
+
+    //: Meter bis zur nächsten Zeitmessung — mitlaufend aus demselben
+    //: Grund wie die Kilometer.
     //:
     //: Unter 10 km in Metern, darüber in Kilometern — 47 000 m liest
     //: niemand, 800 m dagegen genau dann, wenn es darauf ankommt. Wer
-    //: im Ziel ist, bekommt einen Strich: Eine 0 wäre falsch.
+    //: im Ziel ist oder noch wartet, bekommt einen Strich: Eine 0 wäre
+    //: in beiden Fällen falsch.
     toNext(row) {
-      const m = row && row.to_next_m;
-      if (m === null || m === undefined) return '–';
+      const roh = row && row.to_next_m;
+      if (roh === null || roh === undefined) return '–';
+      const m = Math.round(Math.max(roh - (row.v_kmh / 3.6) * this.liveDelta, 0));
       return m < 10000 ? `${m} m` : `${(m / 1000).toFixed(1)} km`;
     },
 
     cell(key, row) {
       switch (key) {
-        case 'km': return row.dist_km.toFixed(1);
+        case 'km': return this.rowDist(row).toFixed(1);
         case 'biscp': return this.toNext(row);
         case 'trend':
           return row.trend > 0 ? `▲${row.trend}` : row.trend < 0 ? `▼${-row.trend}` : '–';
@@ -315,11 +392,50 @@ function raceLive(raceId) {
       this.tick();
     },
 
-    //: Ein Bildschirmtakt reicht: Die Ziffern sollen laufen, nicht
-    //: springen.
+    /* Drei Takte in einer Schleife, weil sie unterschiedlich teuer sind.
+     *
+     * Die Ziffern laufen mit dem Bildschirm — das ist eine
+     * Textänderung. Die Rangfolge wird viermal je Sekunde neu geordnet,
+     * weil sie vierzig Tabellenzeilen im DOM verschiebt. Das Profil
+     * wird fünfzehnmal je Sekunde neu gezeichnet, weil es einen Canvas
+     * neu aufbaut.
+     */
     tick() {
-      this.tickNow = performance.now();
+      const now = performance.now();
+      this.tickNow = now;
+      if (now - this._sortStamp > 250) {
+        this._sortStamp = now;
+        this.sortNow = now;
+      }
+      if (now - this._drawStamp > 66) {
+        this._drawStamp = now;
+        this.drawProfile();
+      }
       this.raf = requestAnimationFrame(() => this.tick());
+    },
+
+    /* Das Höhenprofil, mit weitergeschriebenen Positionen.
+     *
+     * Ohne das hüpfen die Punkte bei hohem Zeitraffer im Sekundentakt
+     * über das Profil, statt zu fahren. Der Untergrund wird dabei nicht
+     * neu gerendert — er hängt am Bildausschnitt, nicht an den Fahrern.
+     */
+    drawProfile() {
+      if (!this.frame || !this.overview || !this.detail) return;
+      const d = this.liveDelta;
+      const pos =
+        d > 0.05
+          ? this.frame.positions.map(([id, dist, kmh, st]) => [
+              id, dist + (kmh / 3.6) * d, kmh, st,
+            ])
+          : this.frame.positions;
+      for (const view of [this.overview, this.detail]) {
+        view.setFrame(pos, this.frame.focus.entry_id, this._neighbours);
+      }
+      this.detail._updateWindow();
+      this.overview.detailRange = [this.detail.viewStart, this.detail.viewEnd];
+      this.overview.draw();
+      this.detail.draw();
     },
 
     //: Wohin der Betrachter zuletzt geschaut hat. Ohne das beginnt die
@@ -416,17 +532,8 @@ function raceLive(raceId) {
           .filter((e) => !seen.has(e.key));
         if (fresh.length) this.ticker = [...fresh.reverse(), ...this.ticker].slice(0, 120);
       }
-      const neighbours = frame.board.rows.map((r) => r.entry_id);
-      for (const view of [this.overview, this.detail]) {
-        if (!view) continue;
-        view.setFrame(frame.positions, frame.focus.entry_id, neighbours);
-      }
-      if (this.detail && this.overview) {
-        this.detail._updateWindow();
-        this.overview.detailRange = [this.detail.viewStart, this.detail.viewEnd];
-      }
-      this.overview && this.overview.draw();
-      this.detail && this.detail.draw();
+      this._neighbours = frame.board.rows.map((r) => r.entry_id);
+      this.drawProfile();
       this.remember();
     },
 

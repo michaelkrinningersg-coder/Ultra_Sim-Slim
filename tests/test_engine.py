@@ -98,6 +98,7 @@ def test_startabstand_betraegt_zehn_minuten():
 
 
 def test_setzliste_stellt_den_staerksten_nach_hinten():
+    """Ohne Saisonpunkte entscheidet die relative FTP."""
     teams, riders = kleines_feld(4)
     # Reihenfolge der Liste bewusst gegen die Stärke gedreht.
     gedreht = list(reversed(riders))
@@ -106,6 +107,35 @@ def test_setzliste_stellt_den_staerksten_nach_hinten():
     reihenfolge = np.argsort(race.start_offset_s)
     assert [wkg[i] for i in reihenfolge] == sorted(wkg)
     assert sorted(race.start_offset_s.tolist()) == [0.0, 600.0, 1200.0, 1800.0]
+
+
+def test_saisonpunkte_setzen_vor_der_ftp():
+    """Wer in der Wertung führt, startet zuletzt — auch als Schwächster."""
+    teams, riders = kleines_feld(4)
+    # Fahrer 0 hat die niedrigste FTP, aber die meisten Punkte;
+    # Fahrer 3 hat die höchste FTP und noch keine.
+    punkte = {0: 120, 1: 40, 2: 40, 3: 0}
+    race = LiveRace(
+        kurzstrecke(), riders, teams,
+        RaceConfig(name="Setzliste", seed=1, season_points=punkte),
+    )
+    reihenfolge = list(np.argsort(race.start_offset_s))
+    assert reihenfolge[0] == 3, "ohne Punkte geht es zuerst raus"
+    assert reihenfolge[-1] == 0, "der Führende der Wertung startet zuletzt"
+    # Punktgleichstand trennt die relative FTP aufsteigend: 1 vor 2.
+    assert reihenfolge[1:3] == [1, 2]
+
+
+def test_ohne_punktestand_bleibt_die_ftp_massgeblich():
+    teams, riders = kleines_feld(4)
+    ohne = LiveRace(kurzstrecke(), riders, teams, RaceConfig("A", 1))
+    leer = LiveRace(kurzstrecke(), riders, teams, RaceConfig("B", 1, season_points={}))
+    nullen = LiveRace(
+        kurzstrecke(), riders, teams,
+        RaceConfig("C", 1, season_points={r.id: 0 for r in riders}),
+    )
+    assert np.array_equal(ohne.start_offset_s, leer.start_offset_s)
+    assert np.array_equal(ohne.start_offset_s, nullen.start_offset_s)
 
 
 def test_wer_nicht_gestartet_ist_faehrt_nicht():

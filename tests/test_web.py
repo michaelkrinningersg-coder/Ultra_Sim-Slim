@@ -215,6 +215,85 @@ def test_board_zeigt_einen_ausschnitt_um_den_fokus(token, laufendes_rennen):
     assert bild["board"]["leader"] is not None
 
 
+def test_splitwertung_zeigt_die_laufende_uhr(token, laufendes_rennen):
+    """Wer die Messstelle noch vor sich hat, steht mit seiner Uhr da.
+
+    Keine Hochrechnung: Die Zeit ist die gefahrene Eigenzeit, sie zählt
+    weiter, und der Fahrer wandert nach unten, sobald sie eine gefahrene
+    Zeit überholt.
+    """
+    laufendes_rennen.post(f"/api/playback/{token}/control", json={"action": "seek", "value": 8 * 3600})
+    laufendes_rennen.post(f"/api/playback/{token}/control", json={"action": "mode", "value": "split"})
+    laufendes_rennen.post(f"/api/playback/{token}/control", json={"action": "split_follow", "value": False})
+    laufendes_rennen.post(f"/api/playback/{token}/control", json={"action": "split", "value": 4})
+    bild = laufendes_rennen.get(f"/api/playback/{token}/frame").json()
+
+    unterwegs = [r for r in bild["board"]["rows"] if r["running"]]
+    assert unterwegs, "es müssen Fahrer vor der Messstelle stehen"
+    for zeile in unterwegs:
+        assert zeile["provisional"] is True, "laufende Uhren stehen kursiv"
+        # Die Uhr eines Fahrers, der noch fährt, ist seine Eigenzeit —
+        # und damit höchstens die Rennuhr.
+        assert 0 < zeile["t_s"] <= bild["t_wall"] + 1
+        assert zeile["to_next_m"] is not None and zeile["to_next_m"] > 0
+
+    # Eine laufende Uhr darf unter der Bestzeit liegen: Der Fahrer hat
+    # die Zeit noch nicht verloren, solange die Uhr sie nicht abläuft.
+    assert any(z["gap_s"] < 0 for z in unterwegs) or all(
+        z["gap_s"] >= 0 for z in unterwegs
+    )
+
+
+def test_laufende_uhr_waechst_mit_der_rennuhr(token, laufendes_rennen):
+    """Dieselbe Zeile, zwei Momente: Die Uhr muss weitergezählt haben."""
+    steuern = lambda a, v: laufendes_rennen.post(  # noqa: E731
+        f"/api/playback/{token}/control", json={"action": a, "value": v}
+    )
+    steuern("mode", "split")
+    steuern("split_follow", False)
+    steuern("split", 6)
+
+    steuern("seek", 9 * 3600)
+    frueh = laufendes_rennen.get(f"/api/playback/{token}/frame").json()
+    steuern("seek", 9 * 3600 + 900)
+    spaet = laufendes_rennen.get(f"/api/playback/{token}/frame").json()
+
+    frueh_rows = {r["entry_id"]: r for r in frueh["board"]["rows"] if r["running"]}
+    getestet = 0
+    for entry, spaeter in ((r["entry_id"], r) for r in spaet["board"]["rows"]):
+        vorher = frueh_rows.get(entry)
+        if vorher is None or not spaeter["running"]:
+            continue
+        assert spaeter["t_s"] == pytest.approx(vorher["t_s"] + 900, abs=5)
+        assert spaeter["dist_km"] > vorher["dist_km"]
+        getestet += 1
+    assert getestet > 0, "es muss vergleichbare Zeilen geben"
+
+
+def test_kopfzeile_zeigt_die_beste_gefahrene_zeit(token, laufendes_rennen):
+    """Worauf sich der Rückstand bezieht, muss auch obenstehen.
+
+    Rang eins ist in der Splitwertung regelmäßig ein Fahrer, dessen Uhr
+    erst Minuten läuft. Die Rückstandsspalte misst aber gegen die beste
+    *gefahrene* Zeit — und die gehört in die angeheftete Kopfzeile.
+    """
+    laufendes_rennen.post(f"/api/playback/{token}/control", json={"action": "seek", "value": 12 * 3600})
+    laufendes_rennen.post(f"/api/playback/{token}/control", json={"action": "mode", "value": "split"})
+    laufendes_rennen.post(f"/api/playback/{token}/control", json={"action": "split_follow", "value": False})
+    laufendes_rennen.post(f"/api/playback/{token}/control", json={"action": "split", "value": 2})
+    bild = laufendes_rennen.get(f"/api/playback/{token}/frame").json()
+
+    fuehrender = bild["board"]["leader"]
+    assert bild["board"]["n_reached"] > 0, "Testaufbau: es muss Messwerte geben"
+    assert fuehrender is not None
+    assert fuehrender["provisional"] is False, "der Führende hat eine gefahrene Zeit"
+    assert fuehrender["gap_s"] == 0.0, "auf ihn bezieht sich der Rückstand"
+
+    # Keine gemessene Zeit im Feld darf besser sein.
+    gemessen = [r["t_s"] for r in bild["board"]["rows"] if not r["provisional"] and r["t_s"]]
+    assert all(t >= fuehrender["t_s"] - 1e-6 for t in gemessen)
+
+
 def test_wartende_stehen_hinten_in_der_zeitwertung(token, laufendes_rennen):
     laufendes_rennen.post(f"/api/playback/{token}/control", json={"action": "seek", "value": 3600})
     laufendes_rennen.post(f"/api/playback/{token}/control", json={"action": "sort", "value": "zeit"})

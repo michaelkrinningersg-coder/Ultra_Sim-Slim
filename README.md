@@ -18,9 +18,9 @@ python -m ultraslim.app          # startet den Server und öffnet den Browser
 - **6 Rennen** je Saison, 300 bis 1000 km, von flach bis Hochgebirge.
 - **3 Saisons** über dieselben Strecken — was sich unterscheidet, ist die
   Tagesform des Feldes.
-- **Einzelstart im Zehn-Minuten-Takt**, gesetzt nach relativer FTP: der
-  Schwächste zuerst, der Stärkste zuletzt. Gewertet wird die gefahrene
-  Eigenzeit.
+- **Einzelstart im Zehn-Minuten-Takt**, gesetzt nach dem Stand der
+  Saisonwertung: die wenigsten Punkte zuerst, der Führende zuletzt.
+  Gewertet wird die gefahrene Eigenzeit.
 - Live-Interface mit Ticker, Startliste, Höhenprofil und Telemetrie-Board,
   Zeitraffer bis 1000×, Vor- und Rücksprung.
 - Fahrer- und Teamwertung über die Saison.
@@ -99,14 +99,34 @@ knapp **50 Stunden**: Der letzte Starter rollt los, wenn der erste längst
 im Ziel ist. Beim Alpen-Rennen läuft die Rennuhr damit über hundert
 Stunden — bei 1000× sind das gut sechs Minuten Zuschauen.
 
-Gesetzt wird nach relativer FTP, der Stärkste startet zuletzt. Die
-Setzliste ist dabei die Papierform, nicht das Ergebnis: Sie kennt FTP und
-Gewicht, aber weder die Tagesform noch das Gelände.
+**Die Setzliste** folgt den Saisonpunkten aufsteigend: Wer in der Wertung
+führt, startet zuletzt und kennt die Zeit, die er schlagen muss. Vor dem
+ersten Rennen haben alle null Punkte — dann setzt die relative FTP die
+Reihenfolge, und sie trennt auch Punktgleichheit, die bei 300 Fahrern und
+Punkten bis Rang 150 die Regel ist, nicht die Ausnahme. Ganz zuletzt
+entscheidet die Startnummer, damit die Reihenfolge reproduzierbar bleibt.
+
+Die Setzliste ist dabei die Papierform, nicht das Ergebnis: Sie kennt
+Punkte, FTP und Gewicht, aber weder die Tagesform noch das Gelände.
 
 Zwei Wertungen im Board:
 
 - **Splitwertung** — die gemessene Zeit an einer Messstelle. Wer noch
-  nicht durch ist, steht mit einer Hochrechnung da (kursiv).
+  nicht durch ist, steht mit seiner **laufenden Uhr** da (kursiv): Er
+  reiht sich oben ein, solange er die Bestzeit noch schlagen kann, und
+  wandert nach unten, sobald seine Uhr eine gefahrene Zeit überholt. So
+  steht es an der Strecke, und so steht es hier.
+
+  Die Rangfolge wird deshalb auch **zwischen zwei Bildern** neu sortiert.
+  Bei 1000× liegen zwischen zwei Bildern über sechzehn Minuten Rennzeit —
+  ohne das stimmte die Tabelle eine ganze Sekunde lang sichtbar nicht.
+  Aus demselben Grund laufen Kilometer und Restmeter mit, statt im
+  Sekundentakt zu springen. Gerechnet wird dabei nichts: Der Vorlauf ist
+  auf das nächste erwartete Bild gedeckelt, genau wie bei der Uhr.
+
+  Die angeheftete Kopfzeile zeigt den Halter der besten **gefahrenen**
+  Zeit — auf ihn bezieht sich der Rückstand, und Rang eins ist dort
+  regelmäßig jemand, dessen Uhr erst fünf Minuten läuft.
 - **Virtuelle Rangliste** — die hochgerechnete Endzeit. Hochgerechnet
   wird über den Schnitt bisher (`t_ziel = t_bisher · s_ziel / s_bisher`),
   nicht über das Momentantempo: Sonst projizierte ein Fahrer am Anstieg
@@ -114,9 +134,16 @@ Zwei Wertungen im Board:
 
 ## Punkte
 
-100/80/65/55/50/45/40/36/32/28/26/24/22/20/18/16/14/12/10/8 für die Top
-20. Die Teamwertung ist die Summe aller zwölf Fahrer. Punktgleichheit
-trennen Siege, dann Podien, dann die beste Einzelplatzierung.
+Punkte bekommen die **ersten 150** jedes Rennens, zusammen 1142 je
+Rennen. Die Ränge eins bis zwanzig stehen von Hand —
+100/80/65/55/50/45/40/36/32/28/26/24/22/20/18/16/14/12/10/8 —, danach
+läuft eine Kurve von sieben auf eins aus. Sie ist oben steiler als unten:
+Zwischen Rang 25 und 35 liegt mehr als zwischen 130 und 140. Der Sockel
+von einem Punkt macht aus der Grenze bei 150 einen Auslauf statt einer
+Klippe.
+
+Die Teamwertung ist die Summe aller zwölf Fahrer. Punktgleichheit trennen
+Siege, dann Podien, dann die beste Einzelplatzierung.
 
 ## Teams
 
@@ -148,7 +175,7 @@ Kein Node, kein Build-Schritt. Alpine.js liegt als Datei bei.
 
 ```
 pip install -r requirements-dev.txt
-pytest -q                                   # 108 Tests
+pytest -q                                   # 114 Tests
 python -m ultraslim.app --no-browser        # Server ohne Browser
 ```
 

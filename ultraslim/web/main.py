@@ -27,6 +27,7 @@ from ..core.season import (
     build_route,
     get_race_spec,
     get_season,
+    points_for_rank,
     rider_standings,
     team_standings,
 )
@@ -163,15 +164,29 @@ def create_app(data_dir: str | Path = "data") -> FastAPI:
             rooms.close(race_id)
 
         if rooms.get(race_id) is None:
-            route = route_for(route_id)
+            # Die Setzliste entsteht aus dem Stand **vor** diesem Rennen.
+            # Ein eigenes Ergebnis darf nicht mitzählen — beim „neu
+            # fahren" wäre sonst die alte Platzierung die Setzung.
+            vorher = {
+                rid: result
+                for rid, result in store.load_season(season.id).items()
+                if rid != route_id
+            }
+            punkte = {
+                s.rider.id: s.points for s in rider_standings(vorher, riders, teams)
+            }
             rooms.add(
                 LiveRoom.start(
                     race_id=race_id,
                     season=season,
-                    route=route,
+                    route=route_for(route_id),
                     riders=riders,
                     teams=teams,
-                    config=RaceConfig(name=spec.name, seed=season.race_seed(spec)),
+                    config=RaceConfig(
+                        name=spec.name,
+                        seed=season.race_seed(spec),
+                        season_points=punkte,
+                    ),
                     store=store,
                 )
             )
@@ -232,6 +247,7 @@ def create_app(data_dir: str | Path = "data") -> FastAPI:
                 "team": teams[by_id[rider_id].team_id],
                 "time_s": t,
                 "gap_s": t - result.finishers[0][1],
+                "points": points_for_rank(rank),
             }
             for rank, rider_id, t in result.ranking()
             if rider_id in by_id
