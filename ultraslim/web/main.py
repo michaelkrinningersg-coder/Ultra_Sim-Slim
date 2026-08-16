@@ -30,6 +30,7 @@ from ..core.season import (
     points_for_rank,
     rider_standings,
     team_standings,
+    time_standings,
 )
 from .rooms import SPEEDS, LiveRegistry, LiveRoom, SessionRegistry
 
@@ -140,6 +141,7 @@ def create_app(data_dir: str | Path = "data") -> FastAPI:
                 "season": season,
                 "calendar": calendar,
                 "riders_table": rider_standings(results, riders, teams)[:30],
+                "time_table": time_standings(results, riders, teams)[:30],
                 "teams_table": team_standings(results, riders, teams),
                 "n_done": len(results),
             },

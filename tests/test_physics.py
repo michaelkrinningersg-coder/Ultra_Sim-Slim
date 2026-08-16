@@ -84,6 +84,100 @@ def test_vam_am_achtprozenter_ist_plausibel():
     assert 1000 < vam < 1250
 
 
+def _klettertempo(wkg: float, kg: float, grade: float, groesse: float = 178.0) -> float:
+    """Gleichgewichtstempo am Anstieg, in m/s."""
+    cda = physics.frontal_area(groesse, kg) * physics.position_k(grade)
+    return float(
+        physics.steady_state_speed(
+            wkg * kg, grade, kg + physics.BIKE_MASS_KG, cda, physics.CRR_ASPHALT, 1.225
+        )
+    )
+
+
+def _vam(wkg: float, kg: float, grade: float, groesse: float = 178.0) -> float:
+    """Höhenmeter je Stunde."""
+    return _klettertempo(wkg, kg, grade, groesse) * grade * 3600.0
+
+
+@pytest.mark.parametrize("grade", [0.06, 0.08, 0.10])
+@pytest.mark.parametrize("wkg", [3.5, 4.0, 4.5, 5.0, 5.5, 6.0])
+def test_vam_trifft_die_gebraeuchliche_naeherung(grade, wkg):
+    """Watt je Kilogramm gegen die Steiggeschwindigkeit.
+
+    Die im Radsport gebräuchliche Näherung lautet
+
+        W/kg = VAM / (200 + 10 · Steigung in Prozent)
+
+    Sie ist eine lineare Anpassung an Messwerte von Rennfahrern an
+    Anstiegen zwischen sechs und elf Prozent. Das Modell darf davon
+    abweichen — es *muss* sogar: Die Näherung ist linear in W/kg, die
+    Physik ist es nicht, weil der Luftwiderstand mit ``v³`` wächst. Was
+    hier geprüft wird, ist die Größenordnung.
+    """
+    naeherung = wkg * (200.0 + 10.0 * grade * 100.0)
+    assert _vam(wkg, 70.0, grade) == pytest.approx(naeherung, rel=0.09)
+
+
+def test_die_abweichung_von_der_naeherung_hat_das_richtige_vorzeichen():
+    """Unten darüber, oben darunter — und genau das gehört so.
+
+    Die lineare Näherung ist an starken Fahrern kalibriert. Zum
+    schwachen Ende hin unterschätzt sie das Tempo, zum starken hin
+    überschätzt sie es, weil sie den mit ``v³`` wachsenden
+    Luftwiderstand nicht kennt. Ein Modell, das diese Krümmung *nicht*
+    zeigte, hätte den Luftwiderstand am Berg vergessen.
+    """
+    def abweichung(wkg: float) -> float:
+        return _vam(wkg, 70.0, 0.08) / (wkg * 280.0) - 1.0
+
+    assert abweichung(3.0) > 0.0
+    assert abweichung(6.5) < 0.0
+    assert abweichung(3.0) > abweichung(4.5) > abweichung(6.5)
+
+
+def test_am_berg_entscheidet_watt_je_kilogramm():
+    """Gleiche relative Leistung, gleiches Bergtempo — fast.
+
+    Über 52 bis 88 Kilogramm dürfen bei identischen W/kg keine großen
+    Unterschiede stehen. Der Rest ist der Rahmen: Ein 7,5-kg-Rad sind
+    beim leichten Fahrer vierzehn Prozent Zusatzmasse, beim schweren
+    achteinhalb — deshalb klettert der Schwere minimal schneller, nicht
+    langsamer.
+    """
+    tempi = [
+        _vam(5.0, kg, 0.08, groesse)
+        for kg, groesse in [(52, 163), (58, 168), (65, 174), (72, 180), (80, 186), (88, 192)]
+    ]
+    assert max(tempi) / min(tempi) - 1.0 < 0.08, "W/kg muss das Bergtempo bestimmen"
+    assert tempi == sorted(tempi), "der Radrahmen wiegt für den Leichten relativ mehr"
+
+
+def test_am_berg_traegt_die_masse_anders_als_im_flachen():
+    """Dieselbe absolute Leistung, doppelte Frage.
+
+    Im Flachen zählt Watt gegen Luftwiderstand, am Berg Watt gegen
+    Gewicht. Ein schwerer Fahrer mit denselben Watt ist deshalb im
+    Flachen kaum langsamer und am Berg deutlich.
+    """
+    leicht_flach = float(
+        physics.steady_state_speed(
+            300.0, 0.0, 60 + physics.BIKE_MASS_KG,
+            physics.frontal_area(170, 60) * physics.position_k(0.0),
+        )
+    )
+    schwer_flach = float(
+        physics.steady_state_speed(
+            300.0, 0.0, 85 + physics.BIKE_MASS_KG,
+            physics.frontal_area(190, 85) * physics.position_k(0.0),
+        )
+    )
+    leicht_berg = _klettertempo(300.0 / 60, 60, 0.08, 170)
+    schwer_berg = _klettertempo(300.0 / 85, 85, 0.08, 190)
+
+    assert schwer_flach / leicht_flach > 0.90, "im Flachen kostet Masse wenig"
+    assert schwer_berg / leicht_berg < 0.80, "am Berg kostet Masse viel"
+
+
 def test_integration_naehert_sich_dem_gleichgewicht():
     """Der Euler-Schritt muss dorthin laufen, wo die Bisektion steht."""
     area = float(physics.frontal_area(180.0, 75.0))

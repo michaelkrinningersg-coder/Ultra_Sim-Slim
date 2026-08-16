@@ -7,6 +7,7 @@ import pytest
 
 from ultraslim.core.engine import (
     DT,
+    STATE_RIDING,
     STATE_WAITING,
     TICKS_PER_YIELD,
     LiveRace,
@@ -14,8 +15,9 @@ from ultraslim.core.engine import (
     grade_power_factor,
     intensity_for_distance,
 )
+from ultraslim.core import physics
 from ultraslim.core.rider import Rider, Team, generate_pool
-from ultraslim.core.route import generate_route
+from ultraslim.core.route import STEP_M, Route, generate_route
 
 
 def kurzstrecke(archetyp="flach", km=60, hm=200, seed=1):
@@ -250,6 +252,53 @@ def test_gleicher_seed_gleiches_rennen():
 def test_tagesform_liegt_im_vorgesehenen_band():
     race = rennen(n=6)
     assert np.all(race.form >= 0.88) and np.all(race.form <= 1.12)
+
+
+def test_engine_klettert_wie_die_gleichgewichtsrechnung():
+    """Was die Engine am Anstieg fährt, muss die Physik hergeben.
+
+    Fünf Kilometer flach, dann zwanzig Kilometer konstante acht Prozent.
+    Gemessen wird nur der eingeschwungene Teil — die ersten Kilometer
+    des Anstiegs gehören dem Abbremsen aus dem Flachen.
+    """
+    from ultraslim.core.route import Split
+
+    n = 250
+    grade = np.concatenate([np.zeros(50), np.full(200, 0.08)])
+    ele = np.concatenate([[0.0], np.cumsum(grade * STEP_M)])
+    route = Route("p", "Rampe", "mittelgebirge", n * STEP_M, STEP_M, ele, grade, [],
+                  [Split(0, "Ziel", n * STEP_M, "finish")])
+
+    teams = [Team(id=0, name="Test–Rad", color="#888888")]
+    rider = Rider(0, 1, "Prüfer", "GER", 0, ftp_w=350.0, weight_kg=70.0, height_cm=178.0)
+    race = LiveRace(route, [rider], teams,
+                    RaceConfig("Rampe", seed=1, start_interval_s=0.0, intensity_factor=1.0))
+
+    tempo, leistung = [], []
+    while not race.finished:
+        race.advance_to(race.sim_t + 30)
+        # Nur solange er fährt: Im Ziel wird das Tempo auf null gesetzt,
+        # und ein einziger solcher Messpunkt verdirbt jede Streuung.
+        if race.state[0] == STATE_RIDING and 8000 < float(race.dist_m[0]) < 23000:
+            tempo.append(float(race.v_ms[0]))
+            leistung.append(float(race.power_w[0]))
+
+    assert len(tempo) > 40
+    v = float(np.mean(tempo))
+    p = float(np.mean(leistung))
+
+    # Die Steigungsmodulation greift: 350 W × 1,15 am Achtprozenter.
+    assert p == pytest.approx(350.0 * 1.15, rel=0.03)
+
+    cda = float(physics.frontal_area(178, 70) * physics.position_k(0.08))
+    rho = float(physics.air_density(float(np.mean(ele[80:230]))))
+    soll = float(physics.steady_state_speed(p, 0.08, 77.5, cda, physics.CRR_ASPHALT, rho))
+    assert v == pytest.approx(soll, rel=0.03)
+
+    # Und die Streuung stammt aus dem Trittrauschen, nicht aus dem
+    # Integrator: Am Anstieg schlägt eine Leistungsänderung fast
+    # eins zu eins aufs Tempo durch.
+    assert float(np.std(tempo)) / v < 0.03
 
 
 def test_das_gelaende_verschiebt_das_kraefteverhaeltnis():

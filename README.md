@@ -23,7 +23,7 @@ python -m ultraslim.app          # startet den Server und öffnet den Browser
   Gewertet wird die gefahrene Eigenzeit.
 - Live-Interface mit Ticker, Startliste, Höhenprofil und Telemetrie-Board,
   Zeitraffer bis 1000×, Vor- und Rücksprung.
-- Fahrer- und Teamwertung über die Saison.
+- Drei Saisonwertungen: **Punkte**, **Gesamtzeit** und **Teams**.
 
 ## Das Physikmodell
 
@@ -47,6 +47,28 @@ Zwei Kontrollpunkte, die im Test stehen — 280 W, 75 kg, 180 cm:
 
 - flach → **38,3 km/h** (CdA 0,318)
 - 8 % Steigung → **13,8 km/h**, das sind 1104 Höhenmeter je Stunde
+
+### Watt je Kilogramm am Berg
+
+Die im Radsport gebräuchliche Näherung für die Steiggeschwindigkeit
+lautet `W/kg = VAM / (200 + 10 · Steigung in Prozent)`. Das Modell trifft
+sie über Steigungen von 6 bis 10 % und 3,5 bis 6,0 W/kg auf **unter neun
+Prozent** genau, an steilen Anstiegen auf unter vier — und die Abweichung
+hat das richtige Vorzeichen: Zum schwachen Ende hin liegt das Modell
+darüber, zum starken darunter. Die Näherung ist linear in W/kg, die
+Physik ist es nicht, weil der Luftwiderstand mit `v³` wächst. Ein Modell
+ohne diese Krümmung hätte den Luftwiderstand am Berg vergessen.
+
+| W/kg | Modell (8 %) | Näherung | Abw. |
+|---|---|---|---|
+| 3,5 | 1034 m/h | 980 | +5,5 % |
+| 4,5 | 1296 m/h | 1260 | +2,9 % |
+| 5,5 | 1542 m/h | 1540 | +0,1 % |
+| 6,5 | 1770 m/h | 1820 | −2,8 % |
+
+Bei gleichen W/kg klettern 52 und 88 Kilogramm innerhalb von 5,6 Prozent
+gleich schnell — der Rest ist der Rahmen: 7,5 kg sind beim leichten
+Fahrer vierzehn Prozent Zusatzmasse, beim schweren achteinhalb.
 
 ### Pacing
 
@@ -145,6 +167,19 @@ Klippe.
 Die Teamwertung ist die Summe aller zwölf Fahrer. Punktgleichheit trennen
 Siege, dann Podien, dann die beste Einzelplatzierung.
 
+## Gesamtwertung nach Zeit
+
+Die zweite Art, eine Saison zu gewinnen: die addierten Fahrzeiten aller
+gefahrenen Rennen. Die Punktewertung ist gnädig — wer ein Rennen
+verliert, verliert höchstens hundert Punkte. Die Zeit addiert stur, und
+eine schlechte Nacht auf tausend Kilometern kostet zwei Stunden, die kein
+späteres Rennen zurückgibt. Beide Wertungen können auseinanderlaufen, und
+genau dafür gibt es die zweite.
+
+Gewertet wird nur, wer in **allen** bislang gefahrenen Rennen eine Zeit
+hat; die übrigen stehen dahinter. Ohne diese Regel führte jeder, der nur
+das kürzeste Rennen bestritten hat.
+
 ## Teams
 
 Fünfundzwanzig feste Paare aus Ausrüster und Radmarke, wie im echten
@@ -175,7 +210,7 @@ Kein Node, kein Build-Schritt. Alpine.js liegt als Datei bei.
 
 ```
 pip install -r requirements-dev.txt
-pytest -q                                   # 114 Tests
+pytest -q                                   # 140 Tests
 python -m ultraslim.app --no-browser        # Server ohne Browser
 ```
 

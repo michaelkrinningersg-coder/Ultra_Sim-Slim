@@ -17,6 +17,7 @@ from ultraslim.core.season import (
     points_for_rank,
     rider_standings,
     team_standings,
+    time_standings,
 )
 
 
@@ -159,6 +160,76 @@ def test_teamwertung_ist_die_summe_ihrer_fahrer(pool):
     for stand in mannschaften:
         erwartet = sum(f.points for f in fahrer if f.rider.team_id == stand.team.id)
         assert stand.points == erwartet
+
+
+def test_gesamtwertung_addiert_die_fahrzeiten(pool):
+    teams, riders = pool
+    a, b, c = riders[0].id, riders[1].id, riders[2].id
+    ergebnisse = {
+        # a gewinnt knapp, b verliert eine Stunde, c fehlt im zweiten Rennen.
+        "ostsee": RaceResult("s2026", "ostsee", [(a, 30000.0), (b, 30600.0), (c, 31000.0)]),
+        "toskana": RaceResult("s2026", "toskana", [(b, 40000.0), (a, 40100.0)]),
+    }
+    tabelle = time_standings(ergebnisse, riders, teams)
+    nach_id = {s.rider.id: s for s in tabelle}
+
+    assert nach_id[a].total_time_s == pytest.approx(70100.0)
+    assert nach_id[b].total_time_s == pytest.approx(70600.0)
+    assert nach_id[a].complete and nach_id[b].complete
+    assert nach_id[a].races == 2
+
+    # Der Führende steht vorn und hat keinen Rückstand.
+    assert tabelle[0].rider.id == a
+    assert tabelle[0].gap_s == 0.0
+    assert nach_id[b].gap_s == pytest.approx(500.0)
+
+
+def test_wer_ein_rennen_ausgelassen_hat_steht_hinten(pool):
+    """Sonst führt jeder, der nur das kürzeste Rennen bestritten hat."""
+    teams, riders = pool
+    a, c = riders[0].id, riders[2].id
+    ergebnisse = {
+        "ostsee": RaceResult("s2026", "ostsee", [(c, 100.0), (a, 30000.0)]),
+        "toskana": RaceResult("s2026", "toskana", [(a, 40000.0)]),
+    }
+    tabelle = time_standings(ergebnisse, riders, teams)
+    nach_id = {s.rider.id: s for s in tabelle}
+
+    assert nach_id[c].total_time_s < nach_id[a].total_time_s, "Testaufbau"
+    assert nach_id[c].complete is False and nach_id[a].complete is True
+    assert tabelle[0].rider.id == a, "der Vollständige führt trotz höherer Summe"
+    assert nach_id[c].gap_s == 0.0, "ohne Wertung auch kein Rückstand"
+
+    unvollstaendig = [s for s in tabelle if not s.complete]
+    vollstaendig = [s for s in tabelle if s.complete]
+    assert tabelle[: len(vollstaendig)] == vollstaendig
+    assert len(unvollstaendig) == len(riders) - 1
+
+
+def test_gesamtwertung_ohne_rennen_wertet_niemanden(pool):
+    teams, riders = pool
+    tabelle = time_standings({}, riders, teams)
+    assert len(tabelle) == len(riders)
+    assert all(not s.complete and s.total_time_s == 0.0 and s.races == 0 for s in tabelle)
+
+
+def test_zeitwertung_und_punktewertung_koennen_auseinanderlaufen(pool):
+    """Zwei Wertungen, zwei Sieger — genau dafür gibt es die zweite.
+
+    Wer knapp gewinnt und knapp verliert, sammelt Punkte. Wer einmal
+    haushoch gewinnt und einmal knapp verliert, gewinnt nach Zeit.
+    """
+    teams, riders = pool
+    a, b = riders[0].id, riders[1].id
+    ergebnisse = {
+        "ostsee": RaceResult("s2026", "ostsee", [(a, 30000.0), (b, 33000.0)]),
+        "toskana": RaceResult("s2026", "toskana", [(b, 40000.0), (a, 40100.0)]),
+    }
+    punkte = {s.rider.id: s.points for s in rider_standings(ergebnisse, riders, teams)}
+    zeiten = {s.rider.id: s.total_time_s for s in time_standings(ergebnisse, riders, teams)}
+
+    assert punkte[a] == punkte[b], "nach Punkten steht es gleich"
+    assert zeiten[a] < zeiten[b], "nach Zeit führt a deutlich"
 
 
 def test_wertung_ohne_ergebnisse_ist_leer_aber_vollstaendig(pool):

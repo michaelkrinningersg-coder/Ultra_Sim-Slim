@@ -223,6 +223,25 @@ class RiderStanding:
 
 
 @dataclass
+class TimeStanding:
+    """Ein Platz in der Gesamtwertung nach Zeit."""
+
+    rider: Rider
+    team: Team
+    #: Summe der Fahrzeiten über alle bislang gefahrenen Rennen.
+    total_time_s: float
+    #: Rückstand auf den Führenden.
+    gap_s: float
+    #: Zeit je Rennen, in Kalenderreihenfolge. ``None`` = nicht gewertet.
+    per_race: list[float | None]
+    #: In wie vielen der gefahrenen Rennen er eine Zeit hat.
+    races: int
+    #: Ob er in **allen** gefahrenen Rennen eine Zeit hat. Nur wer
+    #: vollständig ist, steht in der Gesamtwertung.
+    complete: bool
+
+
+@dataclass
 class TeamStanding:
     team: Team
     points: int
@@ -285,6 +304,57 @@ def rider_standings(
     return standings
 
 
+def time_standings(
+    results: dict[str, RaceResult], riders: list[Rider], teams: list[Team]
+) -> list[TimeStanding]:
+    """Die Gesamtwertung nach Zeit — addierte Fahrzeiten aller Rennen.
+
+    Die zweite Art, eine Saison zu gewinnen. Die Punktewertung belohnt
+    Platzierungen und ist damit gnädig: Wer ein Rennen verliert, verliert
+    höchstens hundert Punkte. Die Zeitwertung addiert stur, und eine
+    schlechte Nacht auf tausend Kilometern kostet zwei Stunden, die
+    kein späteres Rennen zurückgibt.
+
+    Gewertet wird nur, wer in **allen** bislang gefahrenen Rennen eine
+    Zeit hat. Die anderen stehen dahinter — ohne diese Regel führte
+    jeder, der nur das kürzeste Rennen bestritten hat.
+    """
+    gefahren = [spec for spec in CALENDAR if spec.route_id in results]
+    n_races = len(CALENDAR)
+
+    zeiten: dict[int, list[float | None]] = {r.id: [None] * n_races for r in riders}
+    for spec in gefahren:
+        for _, rider_id, t in results[spec.route_id].ranking():
+            if rider_id in zeiten:
+                zeiten[rider_id][spec.idx] = t
+
+    standings: list[TimeStanding] = []
+    for rider in riders:
+        eigene = zeiten[rider.id]
+        gefahrene = [eigene[spec.idx] for spec in gefahren]
+        vorhanden = [t for t in gefahrene if t is not None]
+        standings.append(
+            TimeStanding(
+                rider=rider,
+                team=teams[rider.team_id],
+                total_time_s=float(sum(vorhanden)),
+                gap_s=0.0,
+                per_race=eigene,
+                races=len(vorhanden),
+                complete=bool(gefahren) and len(vorhanden) == len(gefahren),
+            )
+        )
+
+    # Unvollständige nach hinten, sonst führt der, der am wenigsten
+    # gefahren ist. Die Startnummer trennt exakte Gleichstände.
+    standings.sort(key=lambda s: (not s.complete, s.total_time_s, s.rider.bib))
+    fuehrend = next((s for s in standings if s.complete), None)
+    if fuehrend is not None:
+        for s in standings:
+            s.gap_s = s.total_time_s - fuehrend.total_time_s if s.complete else 0.0
+    return standings
+
+
 def team_standings(
     results: dict[str, RaceResult], riders: list[Rider], teams: list[Team]
 ) -> list[TeamStanding]:
@@ -325,6 +395,7 @@ __all__ = [
     "Store",
     "RiderStanding",
     "TeamStanding",
+    "TimeStanding",
     "all_seasons",
     "get_season",
     "get_race_spec",
@@ -332,4 +403,5 @@ __all__ = [
     "points_for_rank",
     "rider_standings",
     "team_standings",
+    "time_standings",
 ]

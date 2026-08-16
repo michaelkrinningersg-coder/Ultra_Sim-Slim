@@ -93,6 +93,49 @@
   </div>
 
   <div class="panel">
+    <div class="panel-title">
+      <span>Gesamtwertung nach Zeit</span>
+      <span class="faint">addierte Fahrzeiten aller {{ n_done }} gefahrenen Rennen</span>
+    </div>
+    {% if n_done %}
+    <p class="dim" style="font-size:.75rem;margin-bottom:.6rem">
+      Die zweite Art, eine Saison zu gewinnen. Die Punktewertung ist gnädig —
+      wer ein Rennen verliert, verliert höchstens hundert Punkte. Die Zeit
+      addiert stur: Eine schlechte Nacht auf tausend Kilometern kostet zwei
+      Stunden, die kein späteres Rennen zurückgibt. Gewertet wird nur, wer in
+      allen gefahrenen Rennen eine Zeit hat.
+    </p>
+    <table>
+      <thead>
+        <tr><th>Rg</th><th>Nr</th><th>Fahrer</th><th>Team</th>
+            <th class="right">Gesamtzeit</th><th class="right">Rückstand</th>
+            {% for e in calendar %}<th class="right" title="{{ e.spec.name }}">R{{ loop.index }}</th>{% endfor %}</tr>
+      </thead>
+      <tbody>
+        {% for s in time_table %}
+        <tr>
+          <td class="rank">{{ loop.index }}</td>
+          <td class="bib">{{ s.rider.bib }}</td>
+          <td><span class="swatch" style="background:{{ s.team.color }}"></span>
+              <span class="flag flag-{{ s.rider.nation }}" title="{{ s.rider.nation }}"></span>
+              {{ s.rider.name }}</td>
+          <td class="dim">{{ s.team.name }}</td>
+          <td class="right mono time"><strong>{{ s.total_time_s|hms }}</strong></td>
+          <td class="right mono gap">{% if s.gap_s %}+{{ s.gap_s|hms }}{% endif %}</td>
+          {% for t in s.per_race %}
+          <td class="right mono {% if t is none %}faint{% endif %}">{{ t|hms if t is not none else '·' }}</td>
+          {% endfor %}
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    <p class="dim" style="font-size:.72rem;margin-top:.4rem">Die besten dreißig von 300.</p>
+    {% else %}
+    <p class="dim">Noch kein Rennen gefahren.</p>
+    {% endif %}
+  </div>
+
+  <div class="panel">
     <div class="panel-title"><span>Teamwertung</span><span class="faint">Summe aller zwölf Fahrer</span></div>
     {% if n_done %}
     <table>
