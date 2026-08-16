@@ -1,0 +1,103 @@
+{% extends "base.html" %}
+{% block title %}{{ track.name }} – Import{% endblock %}
+{% block subtitle %}{{ track.n_points }} Trackpunkte · {{ '%.1f'|format(track.distance_km) }} km{% endblock %}
+{% block topbar %}<a class="faint" href="/strecken">◂ Streckenlager</a>{% endblock %}
+
+{% block head %}
+<script type="module" src="/static/js/import.js"></script>
+<script defer src="/static/vendor/alpine.min.js"></script>
+{% endblock %}
+
+{% block body %}
+<div class="page" x-data="gpxImport('{{ token }}')" x-init="init()">
+
+  <div class="panel">
+    <div class="panel-title">
+      <span>Glättung einstellen</span>
+      <span class="faint" x-text="lade ? 'rechnet …' : ''"></span>
+    </div>
+
+    <p class="dim" style="max-width:78ch;margin-bottom:.8rem">
+      Rohe GPX-Höhen schwanken um ein bis drei Meter von Punkt zu Punkt — mal
+      barometrisch gemessen, mal aus einem Höhenmodell nachgeschlagen, immer
+      verrauscht. Über zehntausend Punkte summiert sich das zu Höhenmetern, die
+      es nie gab. Und im Modell ist das nicht nur eine falsche Zahl, sondern
+      falsche Physik: <strong>Jeder erfundene Meter kostet den Fahrer echte
+      Energie.</strong> Diese Datei kommt ungeglättet auf
+      <span class="mono">{{ track.raw_ascent_m }} m</span>.
+    </p>
+
+    <div class="controls" style="align-items:center">
+      <label class="dim">Fenster
+        <input class="scrub" type="range" style="width:22rem;vertical-align:middle"
+               min="{{ smooth_min|round|int }}" max="{{ smooth_max|round|int }}" step="50"
+               x-model.number="smooth" @input="planeAbruf()">
+      </label>
+      <span class="mono" x-text="smooth + ' m'"></span>
+      <button @click="setze(0)">roh</button>
+      <button @click="setze({{ smooth_default|round|int }})">Portal-übliche {{ smooth_default|round|int }} m</button>
+      <button @click="setze(600)">stark</button>
+    </div>
+
+    <div class="readout" style="margin-top:.8rem">
+      <div class="item"><span class="k">Höhenmeter</span>
+        <span class="v big" x-text="route ? Math.round(route.ascent_m) : '—'"></span></div>
+      <div class="item"><span class="k">roh<span class="u">m</span></span>
+        <span class="v" x-text="{{ track.raw_ascent_m }}"></span></div>
+      <div class="item"><span class="k">Anteil<span class="u">%</span></span>
+        <span class="v" x-text="route ? (route.ascent_m / {{ track.raw_ascent_m or 1 }} * 100).toFixed(0) : '—'"></span></div>
+      <div class="item"><span class="k">Distanz<span class="u">km</span></span>
+        <span class="v" x-text="route ? route.distance_km.toFixed(1) : '—'"></span></div>
+      <div class="item"><span class="k">hm / 100 km</span>
+        <span class="v" x-text="route ? Math.round(route.ascent_m / (route.distance_km / 100)) : '—'"></span></div>
+      <div class="item"><span class="k">höchster Punkt<span class="u">m</span></span>
+        <span class="v" x-text="route ? route.max_elevation_m : '—'"></span></div>
+      <div class="item"><span class="k">steilste Rampe<span class="u">%</span></span>
+        <span class="v" x-text="steilste"></span></div>
+      <div class="item"><span class="k">Anstiege</span>
+        <span class="v" x-text="route ? route.climbs.length : '—'"></span></div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-title">
+      <span>Höhenprofil</span>
+      <span class="faint">so wird die Strecke gefahren</span>
+    </div>
+    <div class="profile-wrap">
+      <canvas class="profile" x-ref="profil"></canvas>
+      <div class="legend">
+        <span><i style="background:#3d7fd1"></i>Abfahrt</span>
+        <span><i style="background:#3f8f5a"></i>flach</span>
+        <span><i style="background:#d9853f"></i>5–8 %</span>
+        <span><i style="background:#ff3b30"></i>&gt; 11 %</span>
+        <span><i style="background:rgba(217,83,79,.35)"></i>kategorisierter Anstieg</span>
+        <span><i style="background:rgba(255,194,71,.7)"></i>Gipfelwertung</span>
+        <span><i style="background:#4ade80"></i>Ziel</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-title"><span>Speichern</span></div>
+    <form method="post" :action="`/strecken/import/{{ token }}/speichern`"
+          style="display:flex;gap:.6rem;flex-wrap:wrap;align-items:flex-end">
+      <label class="dim">Name<br>
+        <input type="text" name="name" style="width:22rem" maxlength="80" required
+               value="{{ track.name }}"></label>
+      <input type="hidden" name="smooth_m" :value="smooth">
+      <label class="dim" title="Leer oder 0 lassen, wenn die geglättete Zahl passen soll">
+        Höhenmeter erzwingen<br>
+        <input type="number" name="ascent_m" min="0" step="10" value="0" style="width:8rem"></label>
+      <button class="primary" type="submit">Ins Streckenlager legen</button>
+    </form>
+    <p class="dim" style="font-size:.72rem;margin-top:.5rem;max-width:78ch">
+      Trägst du eine Höhenmeterzahl ein, wird das geglättete Profil linear
+      darauf skaliert — nützlich, wenn du die Zahl vom Portal übernehmen willst,
+      von dem die Datei stammt. Sie trifft dann exakt, verbiegt aber die
+      einzelnen Steigungen leicht. Null heißt: nehmen, was die Glättung ergibt.
+    </p>
+  </div>
+
+</div>
+{% endblock %}

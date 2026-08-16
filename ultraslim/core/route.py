@@ -188,6 +188,62 @@ class Route:
             "splits": [s.to_dict() for s in self.splits],
         }
 
+    # ------------------------------------------------------------------
+    def to_storage(self) -> dict:
+        """Die Fassung für die Platte.
+
+        Gespeichert wird die **Steigung**, nicht die Höhe: Sie ist das,
+        womit die Physik rechnet, und die Höhe folgt daraus durch
+        Aufsummieren. Andersherum — Höhe speichern, Steigung ableiten —
+        würde jeder Rundungsfehler in der Höhe zu einem Fehler in der
+        Steigung, und fünf Nachkommastellen auf der Steigung sind ein
+        Tausendstel Prozent, während dieselbe Genauigkeit auf der Höhe
+        ein Vielfaches an Zeichen kostet.
+        """
+        return {
+            "format": 1,
+            "id": self.id,
+            "name": self.name,
+            "archetype": self.archetype,
+            "step_m": self.step_m,
+            "base_ele_m": round(float(self.ele_m[0]), 2),
+            "grade": [round(float(g), 5) for g in self.grade],
+            "climbs": [c.to_dict() for c in self.climbs],
+            "splits": [s.to_dict() for s in self.splits],
+        }
+
+    @classmethod
+    def from_storage(cls, data: dict) -> Route:
+        grade = np.asarray(data["grade"], dtype=np.float64)
+        step = float(data.get("step_m", STEP_M))
+        ele = np.concatenate(
+            [[float(data["base_ele_m"])], float(data["base_ele_m"]) + np.cumsum(grade * step)]
+        )
+        return cls(
+            id=data["id"],
+            name=data["name"],
+            archetype=data.get("archetype", "wellig"),
+            distance_m=len(grade) * step,
+            step_m=step,
+            ele_m=ele,
+            grade=grade,
+            climbs=[
+                Climb(
+                    dist_start_m=c["dist_start_m"],
+                    dist_end_m=c["dist_end_m"],
+                    length_m=c["length_m"],
+                    ascent_m=c["ascent_m"],
+                    avg_grade=c["avg_grade"],
+                    category=c["category"],
+                )
+                for c in data.get("climbs", [])
+            ],
+            splits=[
+                Split(idx=s["idx"], name=s["name"], dist_m=s["dist_m"], kind=s["kind"])
+                for s in data.get("splits", [])
+            ],
+        )
+
     def summary(self) -> dict:
         """Die Zeile für Kalender und Übersicht — ohne das Profil."""
         return {

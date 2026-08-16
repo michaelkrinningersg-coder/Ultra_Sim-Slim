@@ -1,0 +1,86 @@
+{% extends "base.html" %}
+{% block title %}Streckenlager{% endblock %}
+{% block subtitle %}{{ routes|length }} eigene Strecke{{ '' if routes|length == 1 else 'n' }} aus GPX{% endblock %}
+{% block topbar %}<a class="faint" href="/">◂ Hauptmenü</a>
+<a class="faint" href="/saisons">Saisons</a>
+<a class="faint" href="/fahrer">Fahrer</a>{% endblock %}
+
+{% block body %}
+<div class="page">
+
+  {% if fehler %}
+  <div class="panel">
+    <div class="panel-title"><span>Import fehlgeschlagen</span></div>
+    <p class="bad">{{ fehler }}</p>
+  </div>
+  {% endif %}
+
+  <div class="panel">
+    <div class="panel-title"><span>GPX hochladen</span></div>
+    <p class="dim" style="max-width:74ch;margin-bottom:.7rem">
+      Aus der Datei wird dasselbe, was auch der Generator liefert: Steigungen
+      auf einem Hundert-Meter-Raster. Die GPX-Datei selbst wird
+      <strong>nicht</strong> aufgehoben — nach dem Import ist sie überflüssig.
+      Im nächsten Schritt stellst du die Glättung ein und siehst sofort, was
+      sie an Höhenmetern kostet.
+    </p>
+    <form method="post" action="/strecken/import" enctype="multipart/form-data"
+          style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:center">
+      <input type="file" name="datei" accept=".gpx,application/gpx+xml,text/xml" required>
+      <button class="primary" type="submit">Einlesen und Vorschau zeigen</button>
+    </form>
+  </div>
+
+  <div class="panel">
+    <div class="panel-title"><span>Eigene Strecken</span><span class="faint">{{ routes|length }}</span></div>
+    {% if routes %}
+    <table>
+      <thead>
+        <tr><th>Strecke</th><th class="right">Distanz</th><th class="right">Höhenmeter</th>
+            <th class="right">hm / 100 km</th><th>Profil</th><th class="right">höchster Punkt</th>
+            <th class="right">Anstiege</th><th>verwendet in</th><th></th></tr>
+      </thead>
+      <tbody>
+        {% for r in routes %}
+        <tr>
+          <td>{{ r.name }}<br><span class="faint mono" style="font-size:.7rem">{{ r.id }}</span></td>
+          <td class="right mono">{{ '%.1f'|format(r.distance_km) }} km</td>
+          <td class="right mono">{{ r.ascent_m }} m</td>
+          <td class="right mono faint">{{ (r.ascent_m / (r.distance_km / 100))|round|int }}</td>
+          <td><span class="badge">{{ r.archetype_label }}</span></td>
+          <td class="right mono faint">{{ r.max_elevation_m }} m</td>
+          <td class="right mono faint">{{ r.n_climbs }}</td>
+          <td class="dim">
+            {% if used_by.get(r.id) %}{{ used_by[r.id]|join(', ') }}{% else %}—{% endif %}
+          </td>
+          <td>
+            <form method="post" action="/strecken/{{ r.id }}/loeschen" style="display:inline"
+                  onsubmit="return confirm('{{ r.name }} endgültig löschen?')">
+              <button title="{% if used_by.get(r.id) %}Achtung: wird noch in einer Saison verwendet{% else %}Strecke aus dem Lager entfernen{% endif %}">
+                löschen
+              </button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p class="dim">Noch keine eigene Strecke. Lade oben eine GPX-Datei hoch.</p>
+    {% endif %}
+  </div>
+
+  <div class="panel">
+    <div class="panel-title"><span>Wo das liegt</span></div>
+    <p class="dim" style="max-width:74ch">
+      Importierte Profile liegen als <span class="mono">data/routes/&lt;kennung&gt;.json.gz</span>
+      neben dem Programm — zehntausend Steigungswerte sind gepackt keine dreißig
+      Kilobyte. Eigene Saisons stehen in <span class="mono">data/seasons/</span>,
+      Ergebnisse in <span class="mono">data/results/</span>. Alles drei übersteht
+      einen Neustart und lässt sich mitkopieren; ist der Ordner schreibgeschützt,
+      weicht das Programm nach <span class="mono">%USERPROFILE%\UltraSimSlim</span> aus.
+    </p>
+  </div>
+
+</div>
+{% endblock %}

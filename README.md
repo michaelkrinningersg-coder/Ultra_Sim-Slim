@@ -24,6 +24,7 @@ python -m ultraslim.app          # startet den Server und öffnet den Browser
 - Live-Interface mit Ticker, Startliste, Höhenprofil und Telemetrie-Board,
   Zeitraffer bis 1000×, Vor- und Rücksprung.
 - Drei Saisonwertungen: **Punkte**, **Gesamtzeit** und **Teams**.
+- **Eigene GPX-Dateien** importieren und daraus eigene Saisons bauen.
 
 ## Das Physikmodell
 
@@ -89,9 +90,59 @@ Zielleistung = `FTP · IF · Tagesform · Steigungsfaktor · Trittrauschen`.
 Was es **nicht** gibt: Ermüdung, W′-Bilanz, Verpflegung, Schlaf, Wetter,
 Wind, Defekte, Stürze, Taktik, Windschatten, Pausen. Das ist Absicht.
 
-## Strecken
+## Eigene Strecken aus GPX
 
-Die Höhenprofile werden erzeugt, nicht importiert — aber deterministisch:
+Unter *Strecken* lässt sich eine GPX-Datei hochladen. Daraus wird dieselbe
+Sorte Profil, die auch der Generator liefert: Steigungen auf einem
+Hundert-Meter-Raster. Unter *Editor* werden mehrere davon zu einem
+eigenen Kalender zusammengestellt, der neben den mitgelieferten Saisons
+steht — mit demselben Feld und denselben Wertungen.
+
+### Die Glättung ist der eigentliche Schritt
+
+Rohe GPX-Höhen schwanken um ein bis drei Meter von Punkt zu Punkt. Über
+zehntausend Punkte summiert sich das zu Höhenmetern, die es nie gab — und
+im Modell ist das nicht nur eine falsche Zahl, sondern falsche Physik:
+**Jeder erfundene Meter kostet den Fahrer echte Energie.**
+
+Gemessen an einem erzeugten Profil mit bekannten 2400 Höhenmetern, aus dem
+eine GPX-Datei mit realistischem Rauschen gebaut wurde:
+
+| Rauschen | roh | nach Glättung (200 m) |
+|---|---|---|
+| ±0 m | 2400 | 2373 |
+| ±1 m | 7314 | 2379 |
+| ±2 m | 13 872 | 2391 |
+| ±4 m | 27 316 | 2433 |
+
+Der Regler beim Import stellt die Fensterbreite in Metern Wegstrecke und
+zeigt sofort, was sie kostet; 200 m entsprechen ungefähr dem, was Strava
+und Komoot anzeigen. Wahlweise lässt sich die Höhenmeterzahl auch fest
+vorgeben — dann skaliert der Import das geglättete Profil linear darauf.
+
+Steigungen werden bei 25 % gedeckelt: Auch nach der Glättung bleibt in
+GPX-Dateien einzelne Ausreißer stehen — ein Tunnel, ein Brückenpfeiler,
+ein Sprung im Höhenmodell.
+
+## Wo das liegt
+
+Alles neben dem Programm, alles überlebt den Neustart:
+
+```
+data/routes/<kennung>.json.gz    importierte Profile (gepackt, ~30 kB je 1000 km)
+data/seasons/<kennung>.json      eigene Kalender
+data/results/<saison>/*.json     Ergebnisse
+```
+
+Gespeichert wird die **Steigung**, nicht die Höhe: Sie ist das, womit die
+Physik rechnet, und die Höhe folgt daraus durch Aufsummieren. Die
+GPX-Datei selbst wird nicht aufgehoben — nach dem Import ist sie
+überflüssig und um ein Vielfaches größer.
+
+## Erzeugte Strecken
+
+Die mitgelieferten Höhenprofile werden erzeugt, nicht importiert — aber
+deterministisch:
 Derselbe Seed liefert dasselbe Profil, Saison für Saison. Ein Profil ist
 eine Folge von Steigungen auf einem 100-Meter-Raster, aufgebaut aus
 Blöcken (welliger Zwischenteil, Anstieg, Abfahrt) und anschließend linear
@@ -138,6 +189,13 @@ Zwei Wertungen im Board:
   reiht sich oben ein, solange er die Bestzeit noch schlagen kann, und
   wandert nach unten, sobald seine Uhr eine gefahrene Zeit überholt. So
   steht es an der Strecke, und so steht es hier.
+
+  In der Wertung steht dabei nur, wer die **vorherige** Messstelle schon
+  hinter sich hat; bei der ersten genügt der Start. Ohne diese Schranke
+  stand die Tabellenspitze dauerhaft voll mit Fahrern, die vor fünf
+  Minuten losgerollt sind — alle zehn Minuten kommt einer dazu, seine Uhr
+  steht bei fast null, und die beste gefahrene Zeit rutscht auf Rang
+  achtzehn.
 
   Die Rangfolge wird deshalb auch **zwischen zwei Bildern** neu sortiert.
   Bei 1000× liegen zwischen zwei Bildern über sechzehn Minuten Rennzeit —
@@ -196,6 +254,7 @@ ultraslim/
     physics.py   Kräftebilanz, CdA, Rollwiderstand, Luftdichte
     rider.py     Fahrer, Teams, Generator für den Pool
     route.py     Höhenprofile: Generator, Anstiege, Zeitmessungen
+    gpx.py       GPX einlesen, glätten, in ein Profil verwandeln
     engine.py    die Rennengine — der angehaltene Generator
     season.py    Kalender, Punkte, Wertungen, Speicher
   web/
@@ -210,7 +269,7 @@ Kein Node, kein Build-Schritt. Alpine.js liegt als Datei bei.
 
 ```
 pip install -r requirements-dev.txt
-pytest -q                                   # 140 Tests
+pytest -q                                   # 177 Tests
 python -m ultraslim.app --no-browser        # Server ohne Browser
 ```
 

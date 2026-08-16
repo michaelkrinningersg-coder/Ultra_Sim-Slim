@@ -17,7 +17,8 @@
     <div class="cards">
       {% for entry in seasons %}
       <div class="card">
-        <h2>{{ entry.season.name }}</h2>
+        <h2>{{ entry.season.name }}
+          {% if entry.season.custom %}<span class="badge">eigen</span>{% endif %}</h2>
         <div class="meta">
           {{ entry.n_done }} von {{ entry.n_races }} Rennen gefahren<br>
           {% if entry.leader %}Führend: {{ entry.leader }}{% else %}Noch keine Wertung{% endif %}
@@ -28,6 +29,19 @@
       </div>
       {% endfor %}
     </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-title"><span>Eigene Strecken und Saisons</span>
+      <span class="faint">{{ n_routes }} Strecken im Lager</span></div>
+    <p class="dim" style="max-width:74ch">
+      Eigene GPX-Dateien lassen sich importieren und zu einem eigenen Kalender
+      zusammenstellen — mit demselben Feld und denselben Wertungen wie die
+      mitgelieferten Saisons. Profile, Saisons und Ergebnisse liegen als
+      Dateien neben dem Programm und überstehen einen Neustart.
+      <a href="/strecken">GPX importieren ▸</a> ·
+      <a href="/saisons">Saison zusammenstellen ▸</a>
+    </p>
   </div>
 
   <div class="panel">

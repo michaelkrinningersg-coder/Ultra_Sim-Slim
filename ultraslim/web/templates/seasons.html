@@ -1,0 +1,114 @@
+{% extends "base.html" %}
+{% block title %}Saisons{% endblock %}
+{% block subtitle %}Eigene Saisons aus importierten Strecken bauen{% endblock %}
+{% block topbar %}<a class="faint" href="/">◂ Hauptmenü</a>
+<a class="faint" href="/strecken">Strecken</a>
+<a class="faint" href="/fahrer">Fahrer</a>{% endblock %}
+
+{% block body %}
+<div class="page">
+
+  {% if fehler %}
+  <div class="panel">
+    <div class="panel-title"><span>Ging nicht</span></div>
+    <p class="bad">{{ fehler }}</p>
+  </div>
+  {% endif %}
+
+  <div class="panel">
+    <div class="panel-title"><span>Neue Saison</span><span class="faint">{{ routes|length }} Strecken im Lager</span></div>
+    {% if routes %}
+    <p class="dim" style="max-width:78ch;margin-bottom:.8rem">
+      Wähle die Strecken, die den Kalender bilden. Die Reihenfolge ist die der
+      Liste — von oben nach unten. Es fährt <strong>dasselbe Feld</strong> wie in
+      allen anderen Saisons: dieselben 300 Fahrer, dieselben 25 Teams. Damit
+      zählen die Ergebnisse in derselben Währung, und du erkennst die Fahrer
+      wieder.
+    </p>
+    <form method="post" action="/saisons/neu">
+      <div style="display:flex;gap:.8rem;flex-wrap:wrap;align-items:flex-end;margin-bottom:.8rem">
+        <label class="dim">Name der Saison<br>
+          <input type="text" name="name" style="width:20rem" maxlength="60" required
+                 placeholder="z. B. Alpenserie"></label>
+        <label class="dim">Jahr<br>
+          <input type="number" name="jahr" value="2030" min="1900" max="2999" style="width:6rem"></label>
+        <label class="dim" title="Bestimmt Tagesform und Trittrauschen. Null heißt: aus dem Jahr ableiten.">
+          Seed<br>
+          <input type="number" name="seed" value="0" style="width:7rem"></label>
+      </div>
+
+      <table>
+        <thead>
+          <tr><th style="width:3rem">dabei</th><th>Strecke</th><th class="right">Distanz</th>
+              <th class="right">Höhenmeter</th><th>Profil</th><th class="right">höchster Punkt</th></tr>
+        </thead>
+        <tbody>
+          {% for r in routes %}
+          <tr>
+            <td><input type="checkbox" name="strecken" value="{{ r.id }}"></td>
+            <td>{{ r.name }}</td>
+            <td class="right mono">{{ '%.1f'|format(r.distance_km) }} km</td>
+            <td class="right mono">{{ r.ascent_m }} m</td>
+            <td><span class="badge">{{ r.archetype_label }}</span></td>
+            <td class="right mono faint">{{ r.max_elevation_m }} m</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+
+      <div style="margin-top:.8rem">
+        <button class="primary" type="submit">Saison anlegen</button>
+      </div>
+    </form>
+    {% else %}
+    <p class="dim">
+      Das Streckenlager ist leer. <a href="/strecken">Zuerst eine GPX-Datei importieren ▸</a>
+    </p>
+    {% endif %}
+  </div>
+
+  <div class="panel">
+    <div class="panel-title"><span>Eigene Saisons</span><span class="faint">{{ seasons|length }}</span></div>
+    {% if seasons %}
+    <table>
+      <thead>
+        <tr><th>Saison</th><th class="right">Rennen</th><th class="right">Distanz gesamt</th>
+            <th class="right">Höhenmeter gesamt</th><th>Kalender</th><th></th></tr>
+      </thead>
+      <tbody>
+        {% for s in seasons %}
+        <tr>
+          <td><a href="/season/{{ s.id }}">{{ s.name }}</a><br>
+              <span class="faint mono" style="font-size:.7rem">{{ s.id }} · {{ s.year }}</span></td>
+          <td class="right mono">{{ s.races|length }}</td>
+          <td class="right mono">{{ '%.0f'|format(s.races|sum(attribute='distance_km')) }} km</td>
+          <td class="right mono">{{ s.races|sum(attribute='ascent_m')|round|int }} m</td>
+          <td class="dim">{{ s.races|map(attribute='name')|join(' · ') }}</td>
+          <td>
+            <form method="post" action="/saisons/{{ s.id }}/loeschen" style="display:inline"
+                  onsubmit="return confirm('{{ s.name }} samt allen Ergebnissen löschen?')">
+              <button title="Löscht die Saison und ihre Ergebnisse. Die Strecken bleiben im Lager.">
+                löschen
+              </button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p class="dim">Noch keine eigene Saison angelegt.</p>
+    {% endif %}
+  </div>
+
+  <div class="panel">
+    <div class="panel-title"><span>Mitgeliefert</span></div>
+    <p class="dim" style="max-width:78ch">
+      Die Saisons 2026 bis 2028 fahren den festen Kalender aus sechs erzeugten
+      Strecken und lassen sich nicht löschen. Was sie unterscheidet, ist die
+      Tagesform des Feldes.
+    </p>
+  </div>
+
+</div>
+{% endblock %}

@@ -13,7 +13,7 @@ from fastapi.testclient import TestClient
 from ultraslim.core.season import POINTS, Store, get_season
 from ultraslim.web.main import create_app
 
-RACE_ID = "s2026-ostsee"
+RACE_ID = "s2026~ostsee"
 
 
 @pytest.fixture(scope="module")

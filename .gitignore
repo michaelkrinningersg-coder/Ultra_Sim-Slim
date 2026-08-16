@@ -7,3 +7,5 @@ dist/
 *.egg-info/
 .pytest_cache/
 data/results/
+data/routes/
+data/seasons/

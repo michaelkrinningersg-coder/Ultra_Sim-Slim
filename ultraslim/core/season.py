@@ -12,7 +12,9 @@ Vorhersage dessen, was noch kommt.
 
 from __future__ import annotations
 
+import gzip
 import json
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -60,7 +62,12 @@ def points_for_rank(rank: int) -> int:
 
 @dataclass(frozen=True)
 class RaceSpec:
-    """Ein Termin im Kalender."""
+    """Ein Termin im Kalender.
+
+    Zwei Herkünfte, ein Typ: Ein Termin verweist entweder auf ein
+    erzeugtes Profil — dann steht in ``route_seed``, woraus es entsteht —
+    oder auf ein importiertes, das im Streckenlager liegt.
+    """
 
     idx: int
     route_id: str
@@ -68,8 +75,36 @@ class RaceSpec:
     distance_km: float
     archetype: str
     ascent_m: float
-    #: Seed des Profils. Über alle Saisons gleich — die Strecke bleibt.
-    route_seed: int
+    #: Seed des erzeugten Profils. Über alle Saisons gleich — die Strecke
+    #: bleibt. ``None`` heißt: aus einer GPX-Datei importiert.
+    route_seed: int | None = None
+
+    @property
+    def imported(self) -> bool:
+        return self.route_seed is None
+
+    def to_dict(self) -> dict:
+        return {
+            "idx": self.idx,
+            "route_id": self.route_id,
+            "name": self.name,
+            "distance_km": self.distance_km,
+            "archetype": self.archetype,
+            "ascent_m": self.ascent_m,
+            "route_seed": self.route_seed,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict) -> RaceSpec:
+        return cls(
+            idx=int(data["idx"]),
+            route_id=str(data["route_id"]),
+            name=str(data["name"]),
+            distance_km=float(data["distance_km"]),
+            archetype=str(data.get("archetype", "wellig")),
+            ascent_m=float(data["ascent_m"]),
+            route_seed=data.get("route_seed"),
+        )
 
 
 #: Der Kalender. Sechs Rennen von 300 bis 1000 Kilometern: eines flach,
@@ -83,42 +118,98 @@ CALENDAR: tuple[RaceSpec, ...] = (
     RaceSpec(5, "alpen", "Alpen-Hochgebirgsmarathon", 1000, "hochgebirge", 23000, 1005),
 )
 
-#: Die wählbaren Saisons. Gleiche Strecken, andere Tagesform.
+#: Die mitgelieferten Saisons. Gleiche Strecken, andere Tagesform.
 SEASON_YEARS: tuple[int, ...] = (2026, 2027, 2028)
 
 
 @dataclass(frozen=True)
 class Season:
+    """Ein Kalender mit Namen.
+
+    Die mitgelieferten Saisons teilen sich ``CALENDAR``; eine
+    selbstgebaute bringt ihre eigene Rennliste mit.
+    """
+
     id: str
     year: int
     name: str
-
-    @property
-    def races(self) -> tuple[RaceSpec, ...]:
-        return CALENDAR
+    races: tuple[RaceSpec, ...] = CALENDAR
+    #: Selbst angelegt und damit löschbar.
+    custom: bool = False
+    #: Basis für Tagesform und Trittrauschen. Ohne Angabe aus dem Jahr.
+    seed: int | None = None
 
     def race_seed(self, spec: RaceSpec) -> int:
         """Der Seed, aus dem Tagesform und Trittrauschen entstehen."""
-        return self.year * 1000 + spec.idx
+        return (self.seed if self.seed is not None else self.year * 1000) + spec.idx
 
     def race_id(self, spec: RaceSpec) -> str:
         return f"{self.id}-{spec.route_id}"
 
+    def spec_for(self, route_id: str) -> RaceSpec | None:
+        return next((r for r in self.races if r.route_id == route_id), None)
 
-def all_seasons() -> list[Season]:
-    return [Season(id=f"s{y}", year=y, name=f"Saison {y}") for y in SEASON_YEARS]
+    def to_dict(self) -> dict:
+        return {
+            "format": 1,
+            "id": self.id,
+            "year": self.year,
+            "name": self.name,
+            "seed": self.seed,
+            "races": [r.to_dict() for r in self.races],
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict) -> Season:
+        rennen = [RaceSpec.from_dict(r) for r in data.get("races", [])]
+        # Die Indizes bestimmen die Spalten jeder Wertungstabelle; eine
+        # Lücke darin wäre eine leere Spalte.
+        rennen = [
+            RaceSpec.from_dict({**r.to_dict(), "idx": i}) for i, r in enumerate(rennen)
+        ]
+        return cls(
+            id=str(data["id"]),
+            year=int(data.get("year", 0)),
+            name=str(data["name"]),
+            races=tuple(rennen),
+            custom=True,
+            seed=data.get("seed"),
+        )
 
 
-def get_season(season_id: str) -> Season | None:
-    return next((s for s in all_seasons() if s.id == season_id), None)
+BUILTIN_SEASONS: tuple[Season, ...] = tuple(
+    Season(id=f"s{y}", year=y, name=f"Saison {y}") for y in SEASON_YEARS
+)
 
 
-def get_race_spec(route_id: str) -> RaceSpec | None:
-    return next((r for r in CALENDAR if r.route_id == route_id), None)
+def all_seasons(store: "Store | None" = None) -> list[Season]:
+    """Mitgelieferte Saisons, danach die selbst angelegten."""
+    eigene = store.load_seasons() if store is not None else []
+    return [*BUILTIN_SEASONS, *eigene]
 
 
-def build_route(spec: RaceSpec) -> Route:
-    """Das Profil eines Termins. Deterministisch aus ``route_seed``."""
+def get_season(season_id: str, store: "Store | None" = None) -> Season | None:
+    return next((s for s in all_seasons(store) if s.id == season_id), None)
+
+
+def get_race_spec(route_id: str, season: Season | None = None) -> RaceSpec | None:
+    quelle = season.races if season is not None else CALENDAR
+    return next((r for r in quelle if r.route_id == route_id), None)
+
+
+def build_route(spec: RaceSpec, store: "Store | None" = None) -> Route:
+    """Das Profil eines Termins.
+
+    Erzeugt aus dem Seed, oder aus dem Streckenlager geladen — von außen
+    ist beides dasselbe.
+    """
+    if spec.imported:
+        if store is None:
+            raise LookupError(f"Für '{spec.route_id}' wird das Streckenlager gebraucht.")
+        route = store.load_route(spec.route_id)
+        if route is None:
+            raise LookupError(f"Die importierte Strecke '{spec.route_id}' fehlt.")
+        return route
     return generate_route(
         route_id=spec.route_id,
         name=spec.name,
@@ -178,32 +269,117 @@ class Store:
         return directory / f"{route_id}.json"
 
     def save(self, result: RaceResult) -> None:
-        path = self._path(result.season_id, result.route_id)
-        # Erst daneben schreiben, dann umbenennen: Ein Absturz mitten im
-        # Schreiben soll keine halbe Datei hinterlassen, die beim
-        # nächsten Start die ganze Saison unlesbar macht.
-        tmp = path.with_suffix(".tmp")
-        tmp.write_text(json.dumps(result.to_dict()), encoding="utf-8")
-        tmp.replace(path)
+        self._write_atomic(self._path(result.season_id, result.route_id), result.to_dict())
 
     def load(self, season_id: str, route_id: str) -> RaceResult | None:
-        path = self._path(season_id, route_id)
-        if not path.exists():
-            return None
+        data = self._read(self._path(season_id, route_id))
         try:
-            return RaceResult.from_dict(json.loads(path.read_text(encoding="utf-8")))
-        except (json.JSONDecodeError, KeyError, ValueError):
+            return RaceResult.from_dict(data) if data else None
+        except (KeyError, TypeError, ValueError):
             return None
 
-    def load_season(self, season_id: str) -> dict[str, RaceResult]:
+    def load_season(self, season_id: str, races: Sequence[RaceSpec] = CALENDAR) -> dict[str, RaceResult]:
         return {
             spec.route_id: result
-            for spec in CALENDAR
+            for spec in races
             if (result := self.load(season_id, spec.route_id)) is not None
         }
 
     def delete(self, season_id: str, route_id: str) -> None:
         self._path(season_id, route_id).unlink(missing_ok=True)
+
+    # -- Streckenlager --------------------------------------------------
+    #
+    # Importierte Profile liegen gzip-komprimiert: Zehntausend
+    # Steigungswerte sind als Text rund 80 kB und gepackt keine 30 —
+    # und gelesen werden sie einmal beim Start einer Übertragung.
+    def _route_path(self, route_id: str) -> Path:
+        directory = self.root / "routes"
+        directory.mkdir(parents=True, exist_ok=True)
+        return directory / f"{route_id}.json.gz"
+
+    def save_route(self, route: Route) -> None:
+        self._write_atomic(self._route_path(route.id), route.to_storage(), packed=True)
+
+    def load_route(self, route_id: str) -> Route | None:
+        data = self._read(self._route_path(route_id), packed=True)
+        try:
+            return Route.from_storage(data) if data else None
+        except (KeyError, TypeError, ValueError):
+            return None
+
+    def list_routes(self) -> list[Route]:
+        directory = self.root / "routes"
+        if not directory.exists():
+            return []
+        gefunden = [self.load_route(p.name[: -len(".json.gz")]) for p in sorted(directory.glob("*.json.gz"))]
+        return [r for r in gefunden if r is not None]
+
+    def has_route(self, route_id: str) -> bool:
+        return self._route_path(route_id).exists()
+
+    def delete_route(self, route_id: str) -> None:
+        self._route_path(route_id).unlink(missing_ok=True)
+
+    # -- Eigene Saisons -------------------------------------------------
+    def _season_path(self, season_id: str) -> Path:
+        directory = self.root / "seasons"
+        directory.mkdir(parents=True, exist_ok=True)
+        return directory / f"{season_id}.json"
+
+    def save_season(self, season: Season) -> None:
+        self._write_atomic(self._season_path(season.id), season.to_dict())
+
+    def load_seasons(self) -> list[Season]:
+        directory = self.root / "seasons"
+        if not directory.exists():
+            return []
+        out: list[Season] = []
+        for pfad in sorted(directory.glob("*.json")):
+            data = self._read(pfad)
+            if not data:
+                continue
+            try:
+                out.append(Season.from_dict(data))
+            except (KeyError, TypeError, ValueError):
+                continue
+        return out
+
+    def delete_season(self, season_id: str) -> None:
+        self._season_path(season_id).unlink(missing_ok=True)
+        # Die Ergebnisse gehören zur Saison und gehen mit ihr.
+        ordner = self.root / "results" / season_id
+        if ordner.exists():
+            for pfad in ordner.glob("*.json"):
+                pfad.unlink(missing_ok=True)
+            ordner.rmdir()
+
+    # -- gemeinsames Schreiben und Lesen ---------------------------------
+    @staticmethod
+    def _write_atomic(path: Path, payload: dict, packed: bool = False) -> None:
+        """Erst daneben schreiben, dann umbenennen.
+
+        Ein Absturz mitten im Schreiben soll keine halbe Datei
+        hinterlassen, die beim nächsten Start die ganze Saison unlesbar
+        macht.
+        """
+        tmp = path.with_suffix(path.suffix + ".tmp")
+        roh = json.dumps(payload).encode("utf-8")
+        if packed:
+            tmp.write_bytes(gzip.compress(roh, compresslevel=6))
+        else:
+            tmp.write_bytes(roh)
+        tmp.replace(path)
+
+    @staticmethod
+    def _read(path: Path, packed: bool = False) -> dict | None:
+        if not path.exists():
+            return None
+        try:
+            roh = path.read_bytes()
+            return json.loads(gzip.decompress(roh) if packed else roh)
+        except (OSError, json.JSONDecodeError, EOFError, gzip.BadGzipFile):
+            return None
 
 
 # ----------------------------------------------------------------------
@@ -252,11 +428,14 @@ class TeamStanding:
 
 
 def rider_standings(
-    results: dict[str, RaceResult], riders: list[Rider], teams: list[Team]
+    results: dict[str, RaceResult],
+    riders: list[Rider],
+    teams: list[Team],
+    races: Sequence[RaceSpec] = CALENDAR,
 ) -> list[RiderStanding]:
     """Die Fahrerwertung über alle bislang gefahrenen Rennen."""
     by_id = {r.id: r for r in riders}
-    n_races = len(CALENDAR)
+    n_races = len(races)
     points: dict[int, int] = {}
     per_race: dict[int, list[int]] = {}
     wins: dict[int, int] = {}
@@ -264,7 +443,7 @@ def rider_standings(
     starts: dict[int, int] = {}
     best: dict[int, int] = {}
 
-    for spec in CALENDAR:
+    for spec in races:
         result = results.get(spec.route_id)
         if result is None:
             continue
@@ -305,7 +484,10 @@ def rider_standings(
 
 
 def time_standings(
-    results: dict[str, RaceResult], riders: list[Rider], teams: list[Team]
+    results: dict[str, RaceResult],
+    riders: list[Rider],
+    teams: list[Team],
+    races: Sequence[RaceSpec] = CALENDAR,
 ) -> list[TimeStanding]:
     """Die Gesamtwertung nach Zeit — addierte Fahrzeiten aller Rennen.
 
@@ -319,8 +501,8 @@ def time_standings(
     Zeit hat. Die anderen stehen dahinter — ohne diese Regel führte
     jeder, der nur das kürzeste Rennen bestritten hat.
     """
-    gefahren = [spec for spec in CALENDAR if spec.route_id in results]
-    n_races = len(CALENDAR)
+    gefahren = [spec for spec in races if spec.route_id in results]
+    n_races = len(races)
 
     zeiten: dict[int, list[float | None]] = {r.id: [None] * n_races for r in riders}
     for spec in gefahren:
@@ -356,14 +538,17 @@ def time_standings(
 
 
 def team_standings(
-    results: dict[str, RaceResult], riders: list[Rider], teams: list[Team]
+    results: dict[str, RaceResult],
+    riders: list[Rider],
+    teams: list[Team],
+    races: Sequence[RaceSpec] = CALENDAR,
 ) -> list[TeamStanding]:
     """Die Teamwertung: Summe der Punkte aller zwölf Fahrer."""
     riders_by_team: dict[int, list[RiderStanding]] = {t.id: [] for t in teams}
-    for standing in rider_standings(results, riders, teams):
+    for standing in rider_standings(results, riders, teams, races):
         riders_by_team[standing.rider.team_id].append(standing)
 
-    n_races = len(CALENDAR)
+    n_races = len(races)
     out: list[TeamStanding] = []
     for team in teams:
         members = riders_by_team[team.id]
@@ -390,6 +575,7 @@ __all__ = [
     "TOP_POINTS",
     "SCORING_PLACES",
     "RaceSpec",
+    "BUILTIN_SEASONS",
     "RaceResult",
     "Season",
     "Store",

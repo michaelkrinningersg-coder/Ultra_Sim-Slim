@@ -292,7 +292,14 @@ function raceLive(raceId) {
      * nächste erwartete Bild gedeckelt, genau wie bei der Uhr.
      */
     rowDist(row) {
-      return row.dist_km + (row.v_kmh * this.liveDelta) / 3600;
+      const roh = row.dist_km + (row.v_kmh * this.liveDelta) / 3600;
+      // Aber keinen Meter über die nächste Zeitmessung hinaus: Ob ein
+      // Fahrer durch ist, sagt der Server, nicht die Hochrechnung. Bei
+      // 1000× liegen zwischen zwei Bildern über acht Kilometer, und
+      // ohne diesen Deckel stand ein Fahrer sichtbar hinter der
+      // Messstelle, während die Tabelle ihn noch davor führte.
+      if (row.to_next_m === null || row.to_next_m === undefined) return roh;
+      return Math.min(roh, row.dist_km + row.to_next_m / 1000);
     },
 
     //: Meter bis zur nächsten Zeitmessung — mitlaufend aus demselben

@@ -8,7 +8,7 @@ from fastapi.testclient import TestClient
 from ultraslim.core.season import CALENDAR
 from ultraslim.web.main import create_app
 
-RACE_ID = "s2026-ostsee"
+RACE_ID = "s2026~ostsee"
 
 
 @pytest.fixture
@@ -314,3 +314,255 @@ def test_uebertragung_beenden_fuehrt_zurueck(laufendes_rennen):
     assert antwort.status_code == 303
     assert antwort.headers["location"] == "/season/s2026"
     assert laufendes_rennen.get(f"/race/{RACE_ID}").status_code == 404
+
+
+# ----------------------------------------------------------------------
+# Splitwertung: wer überhaupt in der Liste steht
+# ----------------------------------------------------------------------
+def test_split_zeigt_nur_wer_die_vorherige_messstelle_durch_hat(token, laufendes_rennen):
+    """Sonst steht die Spitze dauerhaft voll mit Frischgestarteten.
+
+    Alle zehn Minuten rollt einer los, seine Uhr steht bei fast null —
+    und die beste gefahrene Zeit rutscht weit nach unten. Wer die
+    vorherige Messstelle noch vor sich hat, gehört nicht in diese
+    Wertung.
+    """
+    steuern = lambda a, v: laufendes_rennen.post(  # noqa: E731
+        f"/api/playback/{token}/control", json={"action": a, "value": v}
+    )
+    steuern("seek", 14 * 3600)
+    steuern("mode", "split")
+    steuern("split_follow", False)
+    steuern("split", 3)
+    bild = laufendes_rennen.get(f"/api/playback/{token}/frame").json()
+
+    gewertet = [r for r in bild["board"]["rows"] if r["t_s"] is not None]
+    assert gewertet, "irgendwer muss in der Wertung stehen"
+
+    # Niemand mit einer laufenden Uhr darf noch vor der vorherigen
+    # Messstelle stehen: Die Strecke bis dorthin hat er hinter sich.
+    vorherige_km = bild["board"]["split"]["dist_m"] / 1000.0
+    for zeile in gewertet:
+        if zeile["running"]:
+            assert zeile["dist_km"] > 0.0
+            assert zeile["dist_km"] < vorherige_km, "sonst wäre er schon durch"
+
+    # Und ein gerade Gestarteter steht nicht an der Spitze.
+    assert bild["board"]["rows"][0]["dist_km"] > 1.0
+
+
+def test_erste_messstelle_nimmt_alle_gestarteten(token, laufendes_rennen):
+    """Bei Split eins gibt es keine vorherige — dort genügt der Start."""
+    steuern = lambda a, v: laufendes_rennen.post(  # noqa: E731
+        f"/api/playback/{token}/control", json={"action": a, "value": v}
+    )
+    steuern("seek", 5 * 3600)
+    steuern("mode", "split")
+    steuern("split_follow", False)
+    steuern("split", 0)
+    bild = laufendes_rennen.get(f"/api/playback/{token}/frame").json()
+
+    gewertet = sum(1 for r in bild["board"]["rows"] if r["t_s"] is not None)
+    assert gewertet == len(bild["board"]["rows"]) or bild["field"]["waiting"] > 0
+    # Wer gestartet ist, hat eine Zeit; wer wartet, nicht.
+    for zeile in bild["board"]["rows"]:
+        if zeile["state"] == -1:
+            assert zeile["t_s"] is None
+        else:
+            assert zeile["t_s"] is not None
+
+
+# ----------------------------------------------------------------------
+# GPX-Import und Saison-Editor
+# ----------------------------------------------------------------------
+def _gpx_datei(km: float = 40.0, hm: float = 600.0, seed: int = 3) -> bytes:
+    from tests.test_gpx import synth_gpx
+    from ultraslim.core.route import generate_route
+
+    return synth_gpx(generate_route("t", "Probefahrt", km, "wellig", hm, seed=seed))
+
+
+def test_streckenlager_ist_zunaechst_leer(client):
+    text = client.get("/strecken").text
+    assert "Noch keine eigene Strecke" in text
+    assert "GPX hochladen" in text
+
+
+def test_import_fuehrt_ueber_die_vorschau(client):
+    antwort = client.post(
+        "/strecken/import",
+        files={"datei": ("probe.gpx", _gpx_datei(), "application/gpx+xml")},
+        follow_redirects=False,
+    )
+    assert antwort.status_code == 303
+    ziel = antwort.headers["location"]
+    assert ziel.startswith("/strecken/import/")
+
+    seite = client.get(ziel)
+    assert seite.status_code == 200
+    assert "Glättung einstellen" in seite.text
+
+    token = ziel.rsplit("/", 1)[-1]
+    grob = client.get(f"/api/import/{token}/vorschau?smooth_m=0").json()
+    fein = client.get(f"/api/import/{token}/vorschau?smooth_m=400").json()
+    assert grob["ascent_m"] > fein["ascent_m"], "der Regler muss wirken"
+    assert grob["raw_ascent_m"] >= grob["ascent_m"]
+    assert len(fein["profile"]["ele_m"]) == len(fein["profile"]["grade"]) + 1
+
+
+def test_kaputte_datei_landet_mit_begruendung_zurueck(client):
+    antwort = client.post(
+        "/strecken/import",
+        files={"datei": ("murks.gpx", b"kein xml", "application/gpx+xml")},
+        follow_redirects=False,
+    )
+    assert antwort.status_code == 303
+    assert "fehler=" in antwort.headers["location"]
+
+
+def test_abgelaufener_import_erklaert_sich(client):
+    antwort = client.get("/strecken/import/gibtsnicht")
+    assert antwort.status_code == 404
+    assert "abgelaufen" in antwort.text.lower()
+
+
+def test_gespeicherte_strecke_steht_im_lager(client):
+    ziel = client.post(
+        "/strecken/import",
+        files={"datei": ("probe.gpx", _gpx_datei(), "application/gpx+xml")},
+        follow_redirects=False,
+    ).headers["location"]
+    token = ziel.rsplit("/", 1)[-1]
+
+    antwort = client.post(
+        f"/strecken/import/{token}/speichern",
+        data={"name": "Probefahrt Süd", "smooth_m": "200", "ascent_m": "0"},
+        follow_redirects=False,
+    )
+    assert antwort.status_code == 303
+    text = client.get("/strecken").text
+    assert "Probefahrt Süd" in text
+    assert "gpx-probefahrt-sued" in text
+    # Und sie taucht im Hauptmenü als Bestand auf.
+    assert "1 Strecken im Lager" in client.get("/").text
+
+
+def test_gleiche_namen_ueberschreiben_sich_nicht(client):
+    for _ in range(2):
+        ziel = client.post(
+            "/strecken/import",
+            files={"datei": ("probe.gpx", _gpx_datei(), "application/gpx+xml")},
+            follow_redirects=False,
+        ).headers["location"]
+        client.post(
+            f"/strecken/import/{ziel.rsplit('/', 1)[-1]}/speichern",
+            data={"name": "Doppelt", "smooth_m": "200", "ascent_m": "0"},
+            follow_redirects=False,
+        )
+    text = client.get("/strecken").text
+    assert "gpx-doppelt<" in text or "gpx-doppelt" in text
+    assert "gpx-doppelt-2" in text
+
+
+def _lege_strecke_an(client, name: str, km: float = 40.0, hm: float = 600.0, seed: int = 3) -> None:
+    ziel = client.post(
+        "/strecken/import",
+        files={"datei": ("probe.gpx", _gpx_datei(km, hm, seed), "application/gpx+xml")},
+        follow_redirects=False,
+    ).headers["location"]
+    client.post(
+        f"/strecken/import/{ziel.rsplit('/', 1)[-1]}/speichern",
+        data={"name": name, "smooth_m": "200", "ascent_m": "0"},
+        follow_redirects=False,
+    )
+
+
+def test_eigene_saison_aus_zwei_strecken(client):
+    _lege_strecke_an(client, "Etappe Eins", km=40, seed=3)
+    _lege_strecke_an(client, "Etappe Zwei", km=60, hm=1400, seed=4)
+
+    antwort = client.post(
+        "/saisons/neu",
+        data={
+            "name": "Alpenserie",
+            "jahr": "2031",
+            "seed": "0",
+            "strecken": ["gpx-etappe-eins", "gpx-etappe-zwei"],
+        },
+        follow_redirects=False,
+    )
+    assert antwort.status_code == 303
+    assert antwort.headers["location"] == "/season/saison-alpenserie"
+
+    seite = client.get("/season/saison-alpenserie")
+    assert seite.status_code == 200
+    assert "Etappe Eins" in seite.text and "Etappe Zwei" in seite.text
+    # Und im Hauptmenü neben den mitgelieferten.
+    assert "Alpenserie" in client.get("/").text
+
+
+def test_saison_ohne_strecken_wird_abgelehnt(client):
+    antwort = client.post(
+        "/saisons/neu", data={"name": "Leer", "jahr": "2031", "seed": "0"},
+        follow_redirects=False,
+    )
+    assert antwort.status_code == 303
+    assert "fehler=" in antwort.headers["location"]
+
+
+def test_rennen_in_eigener_saison_laeuft(client):
+    _lege_strecke_an(client, "Hausrunde", km=40, seed=7)
+    client.post(
+        "/saisons/neu",
+        data={"name": "Hausserie", "jahr": "2031", "seed": "0", "strecken": ["gpx-hausrunde"]},
+        follow_redirects=False,
+    )
+    antwort = client.post(
+        "/season/saison-hausserie/race/gpx-hausrunde/start", follow_redirects=False
+    )
+    assert antwort.status_code == 303
+    race_id = antwort.headers["location"].rsplit("/", 1)[-1]
+    assert race_id == "saison-hausserie~gpx-hausrunde"
+
+    assert client.get(f"/race/{race_id}").status_code == 200
+    route = client.get(f"/api/race/{race_id}/route").json()
+    assert route["distance_km"] == pytest.approx(40.0, abs=0.5)
+
+    token = client.post(f"/api/race/{race_id}/session").json()["token"]
+    bild = client.get(f"/api/playback/{token}/frame").json()
+    assert bild["field"]["waiting"] + bild["field"]["on_course"] == 300
+
+
+def test_geloeschte_strecke_bricht_die_saison_nicht(client):
+    _lege_strecke_an(client, "Weg Bald", km=40, seed=9)
+    client.post(
+        "/saisons/neu",
+        data={"name": "Kurzserie", "jahr": "2031", "seed": "0", "strecken": ["gpx-weg-bald"]},
+        follow_redirects=False,
+    )
+    client.post("/strecken/gpx-weg-bald/loeschen", follow_redirects=False)
+
+    seite = client.get("/season/saison-kurzserie")
+    assert seite.status_code == 200, "der Kalender muss lesbar bleiben"
+    assert "Strecke fehlt" in seite.text
+
+
+def test_eigene_saison_laesst_sich_loeschen(client):
+    _lege_strecke_an(client, "Vergaenglich", km=40, seed=11)
+    client.post(
+        "/saisons/neu",
+        data={"name": "Wegwerf", "jahr": "2031", "seed": "0", "strecken": ["gpx-vergaenglich"]},
+        follow_redirects=False,
+    )
+    assert "Wegwerf" in client.get("/").text
+
+    client.post("/saisons/saison-wegwerf/loeschen", follow_redirects=False)
+    assert "Wegwerf" not in client.get("/").text
+    assert client.get("/season/saison-wegwerf").status_code == 404
+    # Die Strecke bleibt im Lager.
+    assert "Vergaenglich" in client.get("/strecken").text
+
+
+def test_mitgelieferte_saison_laesst_sich_nicht_loeschen(client):
+    client.post("/saisons/s2026/loeschen", follow_redirects=False)
+    assert client.get("/season/s2026").status_code == 200

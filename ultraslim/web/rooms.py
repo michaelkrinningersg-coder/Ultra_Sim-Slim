@@ -434,8 +434,20 @@ class ViewSession:
             # ruckelte die Rangfolge im Takt des Ereignisstroms.
             s = self.split_idx
             has = reached[:, s]
+            # **Wer überhaupt in dieser Wertung steht.** Nur, wer die
+            # *vorherige* Messstelle schon hinter sich hat; bei der
+            # ersten genügt der Start.
+            #
+            # Ohne diese Schranke stand die Tabellenspitze dauerhaft voll
+            # mit Fahrern, die vor fünf Minuten losgerollt sind: Alle
+            # zehn Minuten kommt einer dazu, seine Uhr steht bei fast
+            # null, und die beste gefahrene Zeit rutscht auf Rang
+            # achtzehn. Mit ihr ist die Liste das, was sie sein soll —
+            # die Fahrer zwischen der letzten und dieser Messstelle,
+            # nach ihrer laufenden Uhr eingereiht.
+            gewertet = started if s == 0 else reached[:, s - 1]
             times = np.where(has, split_times[:, s], own)
-            running = started & ~has
+            running = gewertet & ~has
             provisional = ~has
             best = float(np.min(times[has])) if np.any(has) else 0.0
             gaps = times - best
@@ -448,6 +460,7 @@ class ViewSession:
             times = np.where(finished, np.nan_to_num(live.finish_time_s, nan=0.0), eta)
             running = np.zeros_like(started)
             provisional = ~finished
+            gewertet = started
             best = float(np.min(times[started])) if np.any(started) else 0.0
             gaps = times - best
 
@@ -459,7 +472,9 @@ class ViewSession:
 
         rows: dict[int, dict] = {}
         for k, rider in enumerate(room.riders):
-            waiting = not started[k]
+            # Ohne Zeit in dieser Wertung: kein Wert, kein Rückstand, und
+            # in jeder Zeitsortierung ganz hinten.
+            waiting = not gewertet[k]
             rows[rider.id] = {
                 "entry_id": rider.id,
                 "bib": rider.bib,
