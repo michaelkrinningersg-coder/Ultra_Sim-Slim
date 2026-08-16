@@ -160,7 +160,7 @@ class Route:
         return self.grade[np.clip(idx, 0, len(self.grade) - 1)]
 
     def elevation_at_index(self, idx: np.ndarray) -> np.ndarray:
-        return self.ele_m[np.clip(idx, 0, len(self.ele_m) - 1)]
+        return self.ele_m[np.clip(np.asarray(idx).astype(np.int64), 0, len(self.ele_m) - 1)]
 
     # ------------------------------------------------------------------
     def to_dict(self) -> dict:

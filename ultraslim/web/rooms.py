@@ -48,7 +48,8 @@ JUMP_STEP_S = 60.0
 
 #: Sortierschlüssel, die das Board kennt.
 SORT_FIELDS = frozenset(
-    {"zeit", "nr", "name", "team", "rueckstand", "km", "biscp", "trend", "tempo", "leistung"}
+    {"zeit", "nr", "name", "team", "rueckstand", "km", "biscp", "trend", "tempo",
+     "leistung", "vam"}
 )
 
 
@@ -121,6 +122,7 @@ class LiveRoom:
                 season_id=self.season.id,
                 route_id=self.route.id,
                 finishers=finishers,
+                climb_points=self.live.climb_points(),
             )
         )
 
@@ -168,9 +170,11 @@ class ViewSession:
     speed: int = 10
     focus_id: int = 0
     auto_focus: bool = False
-    mode: str = "virtual"          # 'virtual' | 'split'
+    mode: str = "virtual"          # 'virtual' | 'split' | 'climb'
     split_idx: int = 0
     split_follow: bool = True
+    climb_idx: int = 0
+    climb_follow: bool = True
     sort: str = "zeit"
     sort_desc: bool = False
     pinned: list[int] = field(default_factory=list)
@@ -223,11 +227,21 @@ class ViewSession:
                 self._follow_split()
         elif action == "auto_focus":
             self.auto_focus = bool(value)
-        elif action == "mode" and value in ("virtual", "split"):
-            self.mode = value
+        elif action == "mode" and value in ("virtual", "split", "climb"):
+            # Auf einer Strecke ohne kategorisierten Anstieg gibt es
+            # nichts zu werten — dann bleibt es bei der Splitwertung.
+            if value == "climb" and not self.room.route.climbs:
+                self.mode = "split"
+            else:
+                self.mode = value
         elif action == "split":
             self.split_idx = int(np.clip(int(value), 0, len(self.room.route.splits) - 1))
             self.split_follow = False
+        elif action == "climb" and self.room.route.climbs:
+            self.climb_idx = int(np.clip(int(value), 0, len(self.room.route.climbs) - 1))
+            self.climb_follow = False
+        elif action == "climb_follow":
+            self.climb_follow = bool(value)
         elif action == "split_follow":
             self.split_follow = bool(value)
         elif action == "sort" and value in SORT_FIELDS:
@@ -261,6 +275,25 @@ class ViewSession:
         reached = np.nonzero(~np.isnan(times) & (times <= own))[0]
         if reached.size:
             self.split_idx = int(reached[-1])
+
+    def _follow_climb(self, dist: np.ndarray) -> None:
+        """Board auf den Anstieg ziehen, in dem der Fokus gerade steckt.
+
+        Ist er gerade auf keinem, bleibt der zuletzt erreichte stehen —
+        zwischen zwei Pässen will man sehen, wie der letzte ausging, und
+        nicht auf eine leere Tabelle schauen.
+        """
+        live = self.room.live
+        if not live.n_climbs:
+            return
+        i = self._focus_index()
+        aktuell = int(live.current_climb(dist)[i])
+        if aktuell >= 0:
+            self.climb_idx = aktuell
+            return
+        erreicht = np.nonzero(~np.isnan(live.climb_enter_s[i]))[0]
+        if erreicht.size:
+            self.climb_idx = int(erreicht[-1])
 
     def _follow_action(self) -> None:
         """Regie: Der Fokus folgt dem, bei dem gerade etwas passiert."""
@@ -360,13 +393,21 @@ class ViewSession:
         focus_i = self._focus_index()
         if self.split_follow and self.mode == "split":
             self._follow_split()
+        if self.climb_follow and self.mode == "climb":
+            self._follow_climb(dist)
 
         pos_in_order = {entry: k for k, entry in enumerate(order)}
         centre = pos_in_order.get(room.riders[focus_i].id, 0)
         lo = max(0, centre - BOARD_WINDOW // 2)
         window = order[lo : lo + BOARD_WINDOW]
 
-        leader_entry = self._leader_entry(order, rows_all, reached)
+        if self.mode == "split":
+            durch = reached[:, self.split_idx]
+        elif self.mode == "climb" and live.n_climbs:
+            durch = live.climb_done(t)[:, int(np.clip(self.climb_idx, 0, live.n_climbs - 1))]
+        else:
+            durch = None
+        leader_entry = self._leader_entry(order, rows_all, durch)
         split = route.splits[self.split_idx]
 
         return {
@@ -376,6 +417,7 @@ class ViewSession:
             "speed": self.speed,
             "mode": self.mode,
             "split_follow": self.split_follow,
+            "climb_follow": self.climb_follow,
             "auto_focus": self.auto_focus,
             "sort": self.sort,
             "sort_desc": self.sort_desc,
@@ -392,6 +434,7 @@ class ViewSession:
             "ticker": [e.to_dict(room.riders[focus_i].id) for e in live.events_until(t)[-40:]],
             "board": {
                 "split": {"idx": split.idx, "name": split.name, "dist_m": round(split.dist_m, 1)},
+                "climb": self._climb_payload(t),
                 "n_reached": int(np.count_nonzero(reached[:, self.split_idx])),
                 "n_total": len(room.riders),
                 "leader": rows_all[leader_entry] if leader_entry is not None else None,
@@ -451,6 +494,25 @@ class ViewSession:
             provisional = ~has
             best = float(np.min(times[has])) if np.any(has) else 0.0
             gaps = times - best
+        elif self.mode == "climb" and live.n_climbs:
+            # Bergwertung: die **Auffahrtsdauer** eines Anstiegs, nicht
+            # die Uhr seit dem Start. Wer gerade hochfährt, steht mit der
+            # laufenden Dauer da und wandert nach unten, sobald sie die
+            # Bestzeit überholt — dieselbe Live-Zeitnahme wie am Split,
+            # nur dass die Uhr am Fuß des Berges anfängt.
+            #
+            # In der Wertung steht, wer den Fuß erreicht hat. Alles davor
+            # wäre eine Zeit für eine Auffahrt, die noch nicht begonnen
+            # hat.
+            c = self.climb_idx
+            dauer = live.climb_duration(t)
+            has = live.climb_done(t)[:, c]
+            gewertet = ~np.isnan(dauer[:, c])
+            times = np.nan_to_num(dauer[:, c], nan=0.0)
+            running = gewertet & ~has
+            provisional = ~has
+            best = float(np.min(times[has])) if np.any(has) else 0.0
+            gaps = times - best
         else:
             # Virtuelle Rangliste: die hochgerechnete Endzeit. Beim
             # Einzelstart ist die Distanz allein keine Rangfolge — wer
@@ -469,6 +531,20 @@ class ViewSession:
         next_idx = np.clip(np.count_nonzero(reached, axis=1), 0, n_splits - 1)
         split_dist = np.array([s.dist_m for s in route.splits])
         to_next = np.where(finished | ~started, np.nan, split_dist[next_idx] - dist)
+
+        # Höhenmeter je Stunde: in der Bergwertung die des gewählten
+        # Anstiegs, sonst die des Anstiegs, in dem der Fahrer gerade
+        # steckt. Wer im Flachen rollt, hat keine — ein Strich ist
+        # ehrlicher als eine Null.
+        vam = np.full(len(room.riders), np.nan)
+        if live.n_climbs:
+            alle_vam = live.climb_vam(t, dist)
+            if self.mode == "climb":
+                vam = np.where(gewertet, alle_vam[:, self.climb_idx], np.nan)
+            else:
+                aktuell = live.current_climb(dist)
+                drin = aktuell >= 0
+                vam[drin] = alle_vam[np.nonzero(drin)[0], aktuell[drin]]
 
         rows: dict[int, dict] = {}
         for k, rider in enumerate(room.riders):
@@ -492,6 +568,7 @@ class ViewSession:
                 "next_split": route.splits[int(next_idx[k])].name,
                 "trend": int(trend[k]),
                 "v_kmh": round(float(v[k]) * 3.6, 1),
+                "vam": None if np.isnan(vam[k]) else int(round(float(vam[k]))),
                 "power_w": int(round(float(live.power_w[k]))) if started[k] and not finished[k] else 0,
                 "state": (
                     STATE_FINISHED if finished[k] else (STATE_WAITING if waiting else 0)
@@ -500,28 +577,48 @@ class ViewSession:
             }
         return rows
 
-    def _leader_entry(self, order: list[int], rows: dict[int, dict], reached) -> int | None:
+    def _climb_payload(self, t: float) -> dict | None:
+        """Der gewählte Anstieg samt Durchgangszahl."""
+        live = self.room.live
+        if not live.n_climbs:
+            return None
+        idx = int(np.clip(self.climb_idx, 0, live.n_climbs - 1))
+        climb = self.room.route.climbs[idx]
+        return {
+            "idx": idx,
+            "n_total_climbs": live.n_climbs,
+            "category": climb.category,
+            "name": f"{climb.category} · km {climb.dist_end_m / 1000:.0f}",
+            "length_m": round(climb.length_m),
+            "ascent_m": round(climb.ascent_m),
+            "avg_grade_pct": round(climb.avg_grade * 100, 1),
+            "dist_start_m": round(climb.dist_start_m, 1),
+            "dist_end_m": round(climb.dist_end_m, 1),
+            "n_done": int(np.count_nonzero(live.climb_done(t)[:, idx])),
+        }
+
+    def _leader_entry(self, order: list[int], rows: dict[int, dict], durch) -> int | None:
         """Wer in der angehefteten Kopfzeile steht.
 
-        In der Splitwertung **der Halter der besten gefahrenen Zeit** —
-        nicht Rang eins. Rang eins ist dort regelmäßig ein Fahrer, dessen
-        Uhr erst fünf Minuten läuft; er steht oben, weil er die Bestzeit
-        noch schlagen *kann*, nicht weil er sie geschlagen *hat*. Die
-        Rückstandsspalte misst gegen die beste gefahrene Zeit, und die
-        Kopfzeile muss zeigen, worauf sich diese Zahlen beziehen.
+        In Split- und Bergwertung **der Halter der besten gefahrenen
+        Zeit** — nicht Rang eins. Rang eins ist dort regelmäßig ein
+        Fahrer, dessen Uhr erst fünf Minuten läuft; er steht oben, weil
+        er die Bestzeit noch schlagen *kann*, nicht weil er sie
+        geschlagen *hat*. Die Rückstandsspalte misst gegen die beste
+        gefahrene Zeit, und die Kopfzeile muss zeigen, worauf sich diese
+        Zahlen beziehen.
 
         In der virtuellen Rangliste bleibt es Rang eins: Dort ist jede
         Zeit eine Hochrechnung, es gibt also keine gemessene Referenz.
         """
         if not order:
             return None
-        if self.mode != "split":
+        if durch is None:
             return order[0]
 
         # Nach der Zeit gesucht, nicht nach der Position in ``order``:
         # Sortiert der Zuschauer gerade nach Tempo, stünde dort sonst der
         # schnellste Fahrer statt des schnellsten Durchgangs.
-        durch = reached[:, self.split_idx]
         gemessen = [
             entry
             for i, entry in enumerate(r.id for r in self.room.riders)
@@ -602,6 +699,10 @@ class ViewSession:
                 return -row["v_kmh"]
             if key == "leistung":
                 return -row["power_w"]
+            if key == "vam":
+                # Ohne Anstieg keine Steiggeschwindigkeit — die stehen
+                # hinten, nicht mit einer erfundenen Null vorn.
+                return -(row["vam"] if row["vam"] is not None else -1)
             # 'zeit': die Wertung selbst. Rein nach der Zeit, ohne
             # gemessene und laufende zu trennen — genau darum kann eine
             # laufende Uhr einen Fahrer nach hinten schieben.
@@ -626,7 +727,30 @@ class ViewSession:
         rider = room.riders[i]
         live = room.live
         own = float(live.own_time(t)[i])
+
+        # Steckt er in einem Anstieg? Dann zählt, wie weit noch bis oben
+        # und wie schnell er steigt — die beiden Zahlen, über die am Berg
+        # geredet wird.
+        klettert = None
+        if live.n_climbs and started[i] and not finished[i]:
+            ci = int(live.current_climb(dist)[i])
+            if ci >= 0:
+                climb = room.route.climbs[ci]
+                dauer = float(live.climb_duration(t)[i, ci])
+                klettert = {
+                    "idx": ci,
+                    "category": climb.category,
+                    "remaining_m": round(max(climb.dist_end_m - float(dist[i]), 0.0)),
+                    "ascent_m": round(climb.ascent_m),
+                    "elapsed_s": round(dauer, 1) if np.isfinite(dauer) else None,
+                    "vam": (
+                        int(round(float(live.climb_vam(t, dist)[i, ci])))
+                        if np.isfinite(dauer) and dauer > 30.0
+                        else None
+                    ),
+                }
         return {
+            "climb": klettert,
             "entry_id": rider.id,
             "bib": rider.bib,
             "name": rider.name,

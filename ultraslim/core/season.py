@@ -15,7 +15,7 @@ from __future__ import annotations
 import gzip
 import json
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from .rider import Rider, Team
@@ -231,6 +231,10 @@ class RaceResult:
     route_id: str
     #: (rider_id, Zielzeit in Sekunden), nach Zeit sortiert.
     finishers: list[tuple[int, float]]
+    #: Bergpunkte dieses Rennens, ``rider_id → Punkte``. Nur wer welche
+    #: hat, steht drin — bei dreihundert Fahrern und einer Handvoll
+    #: Kletterern wäre der Rest eine Liste von Nullen.
+    climb_points: dict[int, int] = field(default_factory=dict)
 
     @property
     def winner_time_s(self) -> float | None:
@@ -245,6 +249,7 @@ class RaceResult:
             "season_id": self.season_id,
             "route_id": self.route_id,
             "finishers": [[int(r), round(float(t), 2)] for r, t in self.finishers],
+            "climb_points": {str(k): int(v) for k, v in self.climb_points.items()},
         }
 
     @classmethod
@@ -253,6 +258,7 @@ class RaceResult:
             season_id=data["season_id"],
             route_id=data["route_id"],
             finishers=[(int(r), float(t)) for r, t in data["finishers"]],
+            climb_points={int(k): int(v) for k, v in data.get("climb_points", {}).items()},
         )
 
 
@@ -582,6 +588,7 @@ __all__ = [
     "RiderStanding",
     "TeamStanding",
     "TimeStanding",
+    "ClimbStanding",
     "all_seasons",
     "get_season",
     "get_race_spec",
@@ -590,4 +597,61 @@ __all__ = [
     "rider_standings",
     "team_standings",
     "time_standings",
+    "climb_standings",
 ]
+
+
+@dataclass
+class ClimbStanding:
+    """Ein Platz in der Bergwertung."""
+
+    rider: Rider
+    team: Team
+    points: int
+    #: Punkte je Rennen, in Kalenderreihenfolge.
+    per_race: list[int]
+    races: int
+
+
+def climb_standings(
+    results: dict[str, RaceResult],
+    riders: list[Rider],
+    teams: list[Team],
+    races: Sequence[RaceSpec] = CALENDAR,
+) -> list[ClimbStanding]:
+    """Die Bergwertung über alle bislang gefahrenen Rennen.
+
+    Sie fällt schmal aus, und das ist keine Schwäche: Am Berg entscheidet
+    Watt je Kilogramm, und die besten fünf Kletterer eines Feldes von
+    dreihundert holen die Gipfel unter sich aus. Genau dafür gibt es die
+    Wertung — sie beantwortet eine andere Frage als die Gesamtzeit.
+    """
+    n_races = len(races)
+    punkte: dict[int, int] = {}
+    per_race: dict[int, list[int]] = {}
+    starts: dict[int, int] = {}
+
+    for spec in races:
+        result = results.get(spec.route_id)
+        if result is None:
+            continue
+        for rider_id, p in result.climb_points.items():
+            if p <= 0:
+                continue
+            punkte[rider_id] = punkte.get(rider_id, 0) + p
+            per_race.setdefault(rider_id, [0] * n_races)[spec.idx] = p
+            starts[rider_id] = starts.get(rider_id, 0) + 1
+
+    standings = [
+        ClimbStanding(
+            rider=rider,
+            team=teams[rider.team_id],
+            points=punkte.get(rider.id, 0),
+            per_race=per_race.get(rider.id, [0] * n_races),
+            races=starts.get(rider.id, 0),
+        )
+        for rider in riders
+        if punkte.get(rider.id, 0) > 0
+    ]
+    standings.sort(key=lambda s: (-s.points, -s.races, s.rider.bib))
+    return standings

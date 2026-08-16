@@ -81,6 +81,39 @@ NOISE_PERIOD_FAST = (22.0, 45.0)
 #: viertausend Meldungen für ein Laufband, das zehn zeigt.
 TICKER_SPLIT_LIMIT = 10
 
+#: Punkte der Bergwertung je Kategorie und Rang am Gipfel.
+#:
+#: Die Staffelung folgt der Radsportkonvention: Ein Hors-Catégorie-Pass
+#: ist mehr wert als vier Hügel vierter Kategorie zusammen, und die
+#: Punkte reichen tiefer ins Feld, je größer der Berg. Anders als bei
+#: der Etappenwertung geht es hier nicht darum, das ganze Feld zu
+#: erfassen — eine Bergwertung, die bis Rang 150 zahlt, ist keine.
+CLIMB_POINTS: dict[str, tuple[int, ...]] = {
+    "HC": (20, 15, 12, 10, 8, 6, 4, 2),
+    "1. Kat.": (10, 8, 6, 4, 2, 1),
+    "2. Kat.": (5, 3, 2, 1),
+    "3. Kat.": (2, 1),
+    "4. Kat.": (1,),
+}
+
+
+def climb_points_for(category: str, rank: int) -> int:
+    tabelle = CLIMB_POINTS.get(category, ())
+    return tabelle[rank - 1] if 1 <= rank <= len(tabelle) else 0
+
+
+def _dauer_text(sekunden: float) -> str:
+    """Eine Auffahrtsdauer, wie man sie liest.
+
+    Unter einer Stunde ``m:ss``, darüber ``h:mm:ss``. Ein HC-Pass mit
+    zwei Stunden Auffahrt stand vorher als „122:40" da — richtig
+    gerechnet, aber niemand liest das als zwei Stunden.
+    """
+    ganz = int(round(sekunden))
+    if ganz < 3600:
+        return f"{ganz // 60}:{ganz % 60:02d}"
+    return f"{ganz // 3600}:{ganz % 3600 // 60:02d}:{ganz % 60:02d}"
+
 #: Startabstand zwischen zwei Fahrern, in Sekunden. Einzelstart wie im
 #: Zeitfahren: Es gibt kein Feld, in dem man sich verstecken könnte, und
 #: die Wertung ist die gefahrene Zeit, nicht die Reihenfolge im Ziel.
@@ -253,6 +286,28 @@ class LiveRace:
         self._split_seen = np.zeros(self._n_splits, dtype=np.int32)
         self._split_best = np.full(self._n_splits, np.inf)
 
+        # --- Bergwertung -----------------------------------------------
+        #
+        # Jeder kategorisierte Anstieg wird an beiden Enden gestoppt. Die
+        # Grenzen liegen als eine gemeinsame, nach Distanz sortierte
+        # Liste vor — dann genügt derselbe Zeiger-über-Marken-Ansatz wie
+        # bei den Zeitmessungen, statt für jeden Anstieg einzeln zu
+        # prüfen.
+        self.n_climbs = len(route.climbs)
+        marken = sorted(
+            [(c.dist_start_m, i, 0) for i, c in enumerate(route.climbs)]
+            + [(c.dist_end_m, i, 1) for i, c in enumerate(route.climbs)]
+        )
+        self._mark_dist = np.array([m[0] for m in marken], dtype=np.float64)
+        self._mark_climb = np.array([m[1] for m in marken], dtype=np.int32)
+        self._mark_kind = np.array([m[2] for m in marken], dtype=np.int8)
+        self._n_marks = len(marken)
+        self.next_mark = np.zeros(n, dtype=np.int32)
+        #: Eigenzeit am Fuß und am Gipfel jedes Anstiegs.
+        self.climb_enter_s = np.full((n, self.n_climbs), np.nan)
+        self.climb_exit_s = np.full((n, self.n_climbs), np.nan)
+        self._climb_best = np.full(self.n_climbs, np.inf)
+
         # --- Erinnerung ------------------------------------------------
         self._hist_t: list[float] = [0.0]
         self._hist_dist: list[np.ndarray] = [self.dist_m.astype(np.float32)]
@@ -365,6 +420,7 @@ class LiveRace:
         self.sim_t = t
 
         self._check_splits(t)
+        self._check_climbs(t)
         self._check_finish(t)
 
     def _check_splits(self, t: float) -> None:
@@ -426,6 +482,146 @@ class LiveRace:
                     f"{split.name}: {rider.name} als {rank}. durch",
                 )
             )
+
+    def _check_climbs(self, t: float) -> None:
+        """Fuß und Gipfel jedes Anstiegs stempeln.
+
+        Derselbe Ablauf wie bei den Zeitmessungen, nur über die
+        gemeinsame Markenliste. Gestempelt wird in Eigenzeit — eine
+        Auffahrt dauert, was sie dauert, unabhängig davon, wann der
+        Fahrer losgerollt ist.
+        """
+        if self._n_marks == 0:
+            return
+        while True:
+            offen = self.next_mark < self._n_marks
+            if not offen.any():
+                return
+            probe = np.where(offen, self.next_mark, 0)
+            crossed = offen & (self.dist_m >= self._mark_dist[probe])
+            ids = np.nonzero(crossed)[0]
+            if ids.size == 0:
+                return
+
+            m_idx = self.next_mark[ids]
+            over = self.dist_m[ids] - self._mark_dist[m_idx]
+            own = (t - over / np.maximum(self.v_ms[ids], 0.1)) - self.start_offset_s[ids]
+            self.next_mark[ids] = m_idx + 1
+
+            climb = self._mark_climb[m_idx]
+            am_fuss = self._mark_kind[m_idx] == 0
+            self.climb_enter_s[ids[am_fuss], climb[am_fuss]] = own[am_fuss]
+            self.climb_exit_s[ids[~am_fuss], climb[~am_fuss]] = own[~am_fuss]
+
+            for k in np.nonzero(~am_fuss)[0]:
+                self._on_summit(int(ids[k]), int(climb[k]))
+
+    def _on_summit(self, rider_idx: int, climb_idx: int) -> None:
+        dauer = float(
+            self.climb_exit_s[rider_idx, climb_idx] - self.climb_enter_s[rider_idx, climb_idx]
+        )
+        if not np.isfinite(dauer) or dauer <= 0.0:
+            return
+        # Nur die Bestzeit meldet sich. Dreihundert Auffahrten je Anstieg
+        # wären ein Laufband, das niemand liest.
+        if dauer >= self._climb_best[climb_idx]:
+            return
+        self._climb_best[climb_idx] = dauer
+
+        climb = self.route.climbs[climb_idx]
+        rider = self.riders[rider_idx]
+        vam = climb.ascent_m / (dauer / 3600.0)
+        self.events.append(
+            RaceEvent(
+                rider.id,
+                "BEST_CLIMB",
+                float(self.climb_exit_s[rider_idx, climb_idx]),
+                float(self.climb_exit_s[rider_idx, climb_idx] + self.start_offset_s[rider_idx]),
+                f"{climb.category} km {climb.dist_end_m / 1000:.0f}: {rider.name} "
+                f"in {_dauer_text(dauer)} — {vam:.0f} VAM, Bestzeit",
+            )
+        )
+
+    # ------------------------------------------------------------------
+    def climb_duration(self, t_wall: float) -> np.ndarray:
+        """Auffahrtsdauer je Fahrer und Anstieg, in Sekunden.
+
+        Wer noch im Anstieg ist, bekommt die **laufende** Dauer — dieselbe
+        Logik wie bei einer Zeitmessung, die er noch vor sich hat. Wer
+        ihn noch nicht erreicht hat, bekommt ``nan``.
+        """
+        own = self.own_time(t_wall)[:, None]
+        drin = ~np.isnan(self.climb_enter_s) & (self.climb_enter_s <= own)
+        oben = ~np.isnan(self.climb_exit_s) & (self.climb_exit_s <= own)
+        laufend = np.where(oben, self.climb_exit_s, own)
+        return np.where(drin, laufend - self.climb_enter_s, np.nan)
+
+    def climb_done(self, t_wall: float) -> np.ndarray:
+        own = self.own_time(t_wall)[:, None]
+        return ~np.isnan(self.climb_exit_s) & (self.climb_exit_s <= own)
+
+    def climb_vam(self, t_wall: float, dist_m: np.ndarray | None = None) -> np.ndarray:
+        """Höhenmeter je Stunde, je Fahrer und Anstieg.
+
+        Für eine **abgeschlossene** Auffahrt sind das die Höhenmeter des
+        Anstiegs geteilt durch die gefahrene Zeit. Für eine laufende
+        aber nur die **bis hierher gewonnene** Höhe: Wer ein Drittel
+        oben ist, hat auch erst ein Drittel geklettert, und mit der
+        vollen Höhe im Zähler zeigte er die dreifache
+        Steiggeschwindigkeit.
+
+        Ohne ``dist_m`` bleibt es bei der vollen Höhe — für fertige
+        Auffahrten ist das richtig, und die Punktevergabe fragt nur
+        danach.
+        """
+        dauer = self.climb_duration(t_wall)
+        hm = np.broadcast_to(
+            np.array([c.ascent_m for c in self.route.climbs], dtype=np.float64),
+            dauer.shape,
+        ).copy()
+
+        if dist_m is not None and self.n_climbs:
+            aktuell = self.current_climb(dist_m)
+            drin = np.nonzero(aktuell >= 0)[0]
+            if drin.size:
+                ci = aktuell[drin]
+                step = self.route.step_m
+                jetzt = self.route.elevation_at_index((dist_m[drin] / step).astype(np.int64))
+                fuss = self.route.elevation_at_index(
+                    np.array([self.route.climbs[c].dist_start_m for c in ci]) / step
+                )
+                hm[drin, ci] = np.maximum(jetzt - fuss, 0.0)
+
+        with np.errstate(invalid="ignore", divide="ignore"):
+            return hm / np.maximum(dauer, 1.0) * 3600.0
+
+    def current_climb(self, dist_m: np.ndarray) -> np.ndarray:
+        """In welchem Anstieg jeder Fahrer gerade steckt, sonst -1."""
+        out = np.full(len(self.riders), -1, dtype=np.int32)
+        for i, climb in enumerate(self.route.climbs):
+            drin = (dist_m >= climb.dist_start_m) & (dist_m < climb.dist_end_m)
+            out[drin] = i
+        return out
+
+    def climb_points(self) -> dict[int, int]:
+        """Punkte der Bergwertung nach dem Rennen, je Fahrer.
+
+        Erst am Ende, und nur aus gefahrenen Auffahrten: Eine Wertung
+        über ein Rennen, das noch läuft, wäre eine Prognose.
+        """
+        punkte: dict[int, int] = {}
+        for i, climb in enumerate(self.route.climbs):
+            dauer = self.climb_exit_s[:, i] - self.climb_enter_s[:, i]
+            gueltig = np.nonzero(np.isfinite(dauer) & (dauer > 0))[0]
+            if gueltig.size == 0:
+                continue
+            for rang, k in enumerate(gueltig[np.argsort(dauer[gueltig], kind="stable")], start=1):
+                p = climb_points_for(climb.category, rang)
+                if p == 0:
+                    break
+                rider_id = self.riders[int(k)].id
+                punkte[rider_id] = punkte.get(rider_id, 0) + p
+        return punkte
 
     def _check_finish(self, t: float) -> None:
         done = (self.state == STATE_RIDING) & (self.dist_m >= self.route.distance_m)
@@ -586,6 +782,8 @@ __all__ = [
     "RaceEvent",
     "intensity_for_distance",
     "grade_power_factor",
+    "climb_points_for",
+    "CLIMB_POINTS",
     "STATE_WAITING",
     "STATE_RIDING",
     "STATE_FINISHED",

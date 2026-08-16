@@ -712,3 +712,11 @@ details.why[open] > summary::before { content: "▾ "; }
 /* Wer noch nicht gestartet ist: vorhanden, aber zurückgenommen. */
 .board tr.waiting td { opacity: .45; }
 .chip.wait { border-color: var(--fg-faint); color: var(--fg-faint); }
+
+/* Der Anstieg, in dem der Fokusfahrer gerade steckt. Abgesetzt, weil er
+   nur zeitweise da ist — eine Zeile, die kommt und geht, soll nicht
+   aussehen wie eine, die fehlt. */
+.readout.climbnow { padding: .4rem .5rem; border: 1px solid rgba(217,83,79,.35);
+                    border-radius: var(--radius); background: rgba(217,83,79,.07);
+                    gap: .9rem; }
+.chip.cat { border-color: #e08a86; color: #e08a86; }

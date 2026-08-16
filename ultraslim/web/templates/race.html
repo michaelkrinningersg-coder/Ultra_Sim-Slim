@@ -91,6 +91,19 @@
             <div class="item"><span class="k">Leistung<span class="u">W</span></span>
               <span class="v" x-text="focus.power_w"></span></div>
           </div>
+          <template x-if="focus.climb">
+            <div class="readout climbnow" style="margin-top:.45rem">
+              <div class="item"><span class="k">im Anstieg</span>
+                <span class="v wide"><span class="chip cat" x-text="focus.climb.category"></span></span></div>
+              <div class="item"><span class="k">noch<span class="u">km</span></span>
+                <span class="v" x-text="(focus.climb.remaining_m/1000).toFixed(1)"></span></div>
+              <div class="item"><span class="k">bisher</span>
+                <span class="v" x-text="focus.climb.elapsed_s === null ? '—' : hms(focus.climb.elapsed_s)"></span></div>
+              <div class="item"><span class="k" title="Höhenmeter je Stunde">VAM<span class="u">m/h</span></span>
+                <span class="v" x-text="focus.climb.vam === null ? '—' : focus.climb.vam"></span></div>
+            </div>
+          </template>
+
           <div class="readout riderdata" style="margin-top:.45rem">
             <div class="item"><span class="k">FTP<span class="u">W</span></span>
               <span class="v" x-text="focus.ftp_w"></span></div>
@@ -210,22 +223,42 @@
       <div class="board-head">
         <div>
           <strong>Live-Telemetrie</strong>
-          <span class="faint" x-text="board ? ` · ${board.split.name}` : ''"></span>
+          <span class="faint" x-text="!board ? ''
+            : isClimbMode
+              ? (climb ? ` · ${climb.name} · ${(climb.length_m/1000).toFixed(1)} km · ${climb.ascent_m} hm · ${climb.avg_grade_pct} %` : ' · kein Anstieg')
+              : ` · ${board.split.name}`"></span>
         </div>
         <div class="controls">
-          <button @click="toggleMode()" :class="{on: frame && frame.mode === 'virtual'}">
-            <span x-text="frame && frame.mode === 'virtual' ? 'Virtuelle Rangliste' : 'Splitwertung'"></span>
+          <button @click="toggleMode()" :class="{on: frame && frame.mode === 'virtual'}"
+                  title="Wertung wechseln: virtuelle Rangliste, Splitwertung, Bergwertung">
+            <span x-text="modeLabel()"></span>
           </button>
-          <select @change="setSplit($event.target.value)" x-show="frame && frame.mode !== 'virtual'">
+
+          <select @change="setSplit($event.target.value)"
+                  x-show="frame && frame.mode === 'split'">
             <template x-for="s in (route ? route.splits : [])" :key="s.idx">
               <option :value="s.idx" :selected="board && board.split.idx === s.idx"
                       x-text="`${s.name} — km ${(s.dist_m/1000).toFixed(1)}`"></option>
             </template>
           </select>
-          <button x-show="frame && frame.mode !== 'virtual'"
+          <button x-show="frame && frame.mode === 'split'"
                   @click="control('split_follow', !frame.split_follow)"
                   :class="{on: frame && frame.split_follow}"
                   title="Board folgt automatisch der zuletzt passierten Zeitmessung des Fokusfahrers">
+            ⟳ folgen
+          </button>
+
+          <select @change="setClimb($event.target.value)" x-show="isClimbMode && climb">
+            <template x-for="(c, ci) in (route ? route.climbs : [])" :key="ci">
+              <option :value="ci" :selected="climb && climb.idx === ci"
+                      x-text="`${c.category} · km ${(c.dist_end_m/1000).toFixed(0)} — `
+                              + `${(c.length_m/1000).toFixed(1)} km, ${Math.round(c.ascent_m)} hm, `
+                              + `${(c.avg_grade*100).toFixed(1)} %`"></option>
+            </template>
+          </select>
+          <button x-show="isClimbMode" @click="control('climb_follow', !frame.climb_follow)"
+                  :class="{on: frame && frame.climb_follow}"
+                  title="Board folgt automatisch dem Anstieg, in dem der Fokusfahrer gerade steckt">
             ⟳ folgen
           </button>
           <button @click="showColumnPicker = !showColumnPicker"
@@ -233,7 +266,9 @@
             ⊞ Spalten
           </button>
           <span class="faint" style="font-size:.75rem"
-                x-text="board ? `${board.n_reached} von ${board.n_total} durch` : ''"></span>
+                x-text="isClimbMode
+                  ? (climb ? `${climb.n_done} von ${board.n_total} oben` : '')
+                  : (board ? `${board.n_reached} von ${board.n_total} durch` : '')"></span>
         </div>
       </div>
 
@@ -341,6 +376,8 @@
         erst beim nächsten Bild. In der Wertung steht dabei nur, wer die
         <strong>vorherige</strong> Messstelle schon hinter sich hat (bei der ersten: wer
         gestartet ist); die übrigen stehen mit einem Strich ganz hinten.
+        In der <strong>Bergwertung</strong> gilt dasselbe, nur beginnt die Uhr am Fuß des
+        Anstiegs: Sie zeigt die Auffahrtsdauer, und gewertet wird, wer den Fuß erreicht hat.
         In der virtuellen Rangliste steht statt der Uhr die hochgerechnete Endzeit.
         Gewertet wird immer die <strong>Eigenzeit</strong>; beim Einzelstart sagt die
         Rennuhr nur, wann etwas zu sehen war.

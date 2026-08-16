@@ -566,3 +566,126 @@ def test_eigene_saison_laesst_sich_loeschen(client):
 def test_mitgelieferte_saison_laesst_sich_nicht_loeschen(client):
     client.post("/saisons/s2026/loeschen", follow_redirects=False)
     assert client.get("/season/s2026").status_code == 200
+
+
+# ----------------------------------------------------------------------
+# Bergwertung im Board
+# ----------------------------------------------------------------------
+@pytest.fixture
+def bergrennen(client):
+    """Die Karpaten-Traverse — Mittelgebirge mit reichlich Anstiegen."""
+    antwort = client.post("/season/s2026/race/karpaten/start", follow_redirects=False)
+    assert antwort.status_code == 303
+    race_id = "s2026~karpaten"
+    token = client.post(f"/api/race/{race_id}/session").json()["token"]
+    return client, race_id, token
+
+
+def test_modus_bergwertung_liefert_den_anstieg(bergrennen):
+    client, _, token = bergrennen
+    steuern = lambda a, v: client.post(  # noqa: E731
+        f"/api/playback/{token}/control", json={"action": a, "value": v}
+    )
+    steuern("seek", 14 * 3600)
+    steuern("mode", "climb")
+    bild = client.get(f"/api/playback/{token}/frame").json()
+
+    assert bild["mode"] == "climb"
+    climb = bild["board"]["climb"]
+    assert climb is not None
+    assert climb["n_total_climbs"] > 0
+    assert climb["ascent_m"] > 0 and climb["length_m"] > 0
+    assert 0 < climb["avg_grade_pct"] < 25
+    assert climb["dist_end_m"] > climb["dist_start_m"]
+    assert 0 <= climb["n_done"] <= bild["board"]["n_total"]
+
+
+def test_bergwertung_zeigt_auffahrtsdauer_statt_rennzeit(bergrennen):
+    client, _, token = bergrennen
+    steuern = lambda a, v: client.post(  # noqa: E731
+        f"/api/playback/{token}/control", json={"action": a, "value": v}
+    )
+    steuern("seek", 16 * 3600)
+    steuern("mode", "climb")
+    steuern("climb_follow", False)
+    steuern("climb", 1)
+    bild = client.get(f"/api/playback/{token}/frame").json()
+
+    gewertet = [r for r in bild["board"]["rows"] if r["t_s"] is not None]
+    assert gewertet, "irgendwer muss den Anstieg erreicht haben"
+    for zeile in gewertet:
+        # Eine Auffahrt dauert Minuten, keine Stunden Rennzeit.
+        assert 0 < zeile["t_s"] < 4 * 3600, zeile["t_s"]
+    # Wer den Fuß noch nicht erreicht hat, steht ohne Zeit hinten.
+    ohne = [r for r in bild["board"]["rows"] if r["t_s"] is None]
+    if ohne:
+        assert all(r["rank"] > max(g["rank"] for g in gewertet) for r in ohne)
+
+
+def test_vam_steht_in_der_bergwertung_und_ist_plausibel(bergrennen):
+    client, _, token = bergrennen
+    steuern = lambda a, v: client.post(  # noqa: E731
+        f"/api/playback/{token}/control", json={"action": a, "value": v}
+    )
+    steuern("seek", 16 * 3600)
+    steuern("mode", "climb")
+    bild = client.get(f"/api/playback/{token}/frame").json()
+
+    werte = [r["vam"] for r in bild["board"]["rows"] if r["vam"] is not None]
+    assert werte, "in der Bergwertung muss VAM stehen"
+    assert all(150 < v < 2200 for v in werte), werte
+
+
+def test_kopfzeile_der_bergwertung_ist_die_beste_auffahrt(bergrennen):
+    client, _, token = bergrennen
+    steuern = lambda a, v: client.post(  # noqa: E731
+        f"/api/playback/{token}/control", json={"action": a, "value": v}
+    )
+    steuern("seek", 18 * 3600)
+    steuern("mode", "climb")
+    steuern("climb_follow", False)
+    steuern("climb", 0)
+    bild = client.get(f"/api/playback/{token}/frame").json()
+
+    if bild["board"]["climb"]["n_done"] == 0:
+        pytest.skip("noch niemand oben")
+    fuehrend = bild["board"]["leader"]
+    assert fuehrend["provisional"] is False
+    assert fuehrend["gap_s"] == 0.0
+
+
+def test_ohne_anstieg_faellt_der_modus_zurueck(client):
+    """Die Ostsee ist flach — dort gibt es nichts zu werten."""
+    client.post("/season/s2026/race/ostsee/start", follow_redirects=False)
+    token = client.post("/api/race/s2026~ostsee/session").json()["token"]
+    client.post(f"/api/playback/{token}/control", json={"action": "mode", "value": "climb"})
+    bild = client.get(f"/api/playback/{token}/frame").json()
+    assert bild["mode"] == "split", "leere Tabelle wäre keine Antwort"
+    assert bild["board"]["climb"] is None
+
+
+def test_bergmeldungen_landen_im_ticker(bergrennen):
+    client, _, token = bergrennen
+    client.post(f"/api/playback/{token}/control", json={"action": "seek", "value": 16 * 3600})
+    bild = client.get(f"/api/playback/{token}/frame").json()
+    berg = [e for e in bild["ticker"] if e["type"] == "BEST_CLIMB"]
+    if berg:
+        assert all("VAM" in e["text"] for e in berg)
+        assert all(e["t_wall"] <= bild["t_wall"] + 1 for e in berg)
+
+
+def test_bergpunkte_landen_in_der_saisonwertung(client):
+    """Ende zu Ende: Rennen fahren, Punkte speichern, Tabelle füllen."""
+    from ultraslim.core.rider import generate_pool
+    from ultraslim.core.season import Store, climb_standings
+
+    client.post("/season/s2026/race/toskana/start", follow_redirects=False)
+    token = client.post("/api/race/s2026~toskana/session").json()["token"]
+    horizont = client.get(f"/api/playback/{token}/frame").json()["horizon_s"]
+    client.post(
+        f"/api/playback/{token}/control", json={"action": "seek", "value": horizont + 3600}
+    )
+
+    seite = client.get("/season/s2026")
+    assert seite.status_code == 200
+    assert "Bergwertung" in seite.text

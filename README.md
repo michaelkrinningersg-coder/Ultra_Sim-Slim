@@ -23,7 +23,7 @@ python -m ultraslim.app          # startet den Server und öffnet den Browser
   Gewertet wird die gefahrene Eigenzeit.
 - Live-Interface mit Ticker, Startliste, Höhenprofil und Telemetrie-Board,
   Zeitraffer bis 1000×, Vor- und Rücksprung.
-- Drei Saisonwertungen: **Punkte**, **Gesamtzeit** und **Teams**.
+- Vier Saisonwertungen: **Punkte**, **Gesamtzeit**, **Berg** und **Teams**.
 - **Eigene GPX-Dateien** importieren und daraus eigene Saisons bauen.
 
 ## Das Physikmodell
@@ -207,6 +207,11 @@ Zwei Wertungen im Board:
   Die angeheftete Kopfzeile zeigt den Halter der besten **gefahrenen**
   Zeit — auf ihn bezieht sich der Rückstand, und Rang eins ist dort
   regelmäßig jemand, dessen Uhr erst fünf Minuten läuft.
+- **Bergwertung** — die Auffahrtsdauer eines Anstiegs. Dieselbe
+  Live-Zeitnahme wie am Split, nur beginnt die Uhr am Fuß des Berges;
+  gewertet wird, wer den Fuß erreicht hat. Dazu die VAM: Höhenmeter je
+  Stunde, für eine laufende Auffahrt aus der **bis dahin gewonnenen**
+  Höhe — wer ein Drittel oben ist, hat auch erst ein Drittel geklettert.
 - **Virtuelle Rangliste** — die hochgerechnete Endzeit. Hochgerechnet
   wird über den Schnitt bisher (`t_ziel = t_bisher · s_ziel / s_bisher`),
   nicht über das Momentantempo: Sonst projizierte ein Fahrer am Anstieg
@@ -224,6 +229,24 @@ Klippe.
 
 Die Teamwertung ist die Summe aller zwölf Fahrer. Punktgleichheit trennen
 Siege, dann Podien, dann die beste Einzelplatzierung.
+
+## Bergwertung
+
+Jeder kategorisierte Anstieg wird an beiden Enden gestoppt. Am Gipfel
+gibt es Punkte nach Kategorie:
+
+| Kategorie | Punkte |
+|---|---|
+| HC | 20/15/12/10/8/6/4/2 |
+| 1. Kat. | 10/8/6/4/2/1 |
+| 2. Kat. | 5/3/2/1 |
+| 3. Kat. | 2/1 |
+| 4. Kat. | 1 |
+
+Die Tabelle fällt schmal aus, und das ist keine Schwäche: Am Berg
+entscheidet Watt je Kilogramm, und die besten Kletterer eines Feldes von
+dreihundert machen die Gipfel unter sich aus. Genau dafür gibt es die
+Wertung — sie beantwortet eine andere Frage als die Gesamtzeit.
 
 ## Gesamtwertung nach Zeit
 
@@ -269,7 +292,7 @@ Kein Node, kein Build-Schritt. Alpine.js liegt als Datei bei.
 
 ```
 pip install -r requirements-dev.txt
-pytest -q                                   # 177 Tests
+pytest -q                                   # 197 Tests
 python -m ultraslim.app --no-browser        # Server ohne Browser
 ```
 

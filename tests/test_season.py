@@ -238,3 +238,58 @@ def test_wertung_ohne_ergebnisse_ist_leer_aber_vollstaendig(pool):
     assert len(tabelle) == len(riders)
     assert all(s.points == 0 and s.starts == 0 for s in tabelle)
     assert all(t.points == 0 and t.top_rider is None for t in team_standings({}, riders, teams))
+
+
+def test_bergwertung_summiert_die_rennen(pool):
+    from ultraslim.core.season import climb_standings
+
+    teams, riders = pool
+    a, b, c = riders[0].id, riders[1].id, riders[2].id
+    ergebnisse = {
+        "karpaten": RaceResult("s2026", "karpaten", [(a, 1.0)], climb_points={a: 40, b: 25}),
+        "alpen": RaceResult("s2026", "alpen", [(b, 1.0)], climb_points={b: 30, c: 12}),
+    }
+    tabelle = climb_standings(ergebnisse, riders, teams)
+    nach_id = {s.rider.id: s for s in tabelle}
+
+    assert [s.rider.id for s in tabelle] == [b, a, c]
+    assert nach_id[b].points == 55 and nach_id[b].races == 2
+    assert nach_id[a].points == 40 and nach_id[a].races == 1
+    assert sum(nach_id[b].per_race) == 55
+    # Wer keine Bergpunkte hat, steht gar nicht in der Tabelle.
+    assert len(tabelle) == 3
+
+
+def test_bergwertung_ohne_punkte_ist_leer(pool):
+    from ultraslim.core.season import climb_standings
+
+    teams, riders = pool
+    assert climb_standings({}, riders, teams) == []
+    ohne = {"ostsee": RaceResult("s2026", "ostsee", [(riders[0].id, 1.0)])}
+    assert climb_standings(ohne, riders, teams) == []
+
+
+def test_bergpunkte_ueberstehen_speichern_und_laden(tmp_path):
+    store = Store(tmp_path)
+    store.save(
+        RaceResult("s2026", "alpen", [(3, 1000.0), (7, 1100.0)], climb_points={3: 20, 7: 8})
+    )
+    wieder = store.load("s2026", "alpen")
+    assert wieder is not None
+    assert wieder.climb_points == {3: 20, 7: 8}
+
+
+def test_altes_ergebnis_ohne_bergpunkte_bleibt_lesbar(tmp_path):
+    """Dateien aus der Zeit vor der Bergwertung dürfen nicht stolpern."""
+    import json
+
+    store = Store(tmp_path)
+    ordner = tmp_path / "results" / "s2026"
+    ordner.mkdir(parents=True)
+    (ordner / "alpen.json").write_bytes(
+        json.dumps({"season_id": "s2026", "route_id": "alpen", "finishers": [[1, 500.0]]}).encode()
+    )
+    wieder = store.load("s2026", "alpen")
+    assert wieder is not None
+    assert wieder.finishers == [(1, 500.0)]
+    assert wieder.climb_points == {}

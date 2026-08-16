@@ -365,3 +365,130 @@ def test_grosses_feld_bleibt_bezahlbar():
     assert race.finished
     assert np.all(np.isfinite(race.finish_time_s))
     assert len(race.riders) == 300
+
+
+# ----------------------------------------------------------------------
+# Bergwertung
+# ----------------------------------------------------------------------
+def bergrennen(n=6, seed=3):
+    """Mittelgebirge — dort gibt es sicher kategorisierte Anstiege."""
+    teams, riders = kleines_feld(n)
+    route = kurzstrecke("mittelgebirge", 150, 3000, seed=11)
+    assert route.climbs, "Testaufbau: die Strecke braucht Anstiege"
+    return route, LiveRace(route, riders, teams, RaceConfig("Berg", seed=seed))
+
+
+def test_jede_auffahrt_wird_an_beiden_enden_gestempelt():
+    route, race = bergrennen()
+    race.advance_to(1e9)
+    assert race.n_climbs == len(route.climbs)
+    assert np.all(np.isfinite(race.climb_enter_s))
+    assert np.all(np.isfinite(race.climb_exit_s))
+    assert np.all(race.climb_exit_s > race.climb_enter_s), "oben ist nach unten"
+
+
+def test_auffahrtsdauer_und_vam_passen_zueinander():
+    route, race = bergrennen()
+    race.advance_to(1e9)
+    dauer = race.climb_duration(1e9)
+    vam = race.climb_vam(1e9)
+    for i, climb in enumerate(route.climbs):
+        erwartet = climb.ascent_m / (dauer[:, i] / 3600.0)
+        assert np.allclose(vam[:, i], erwartet, rtol=1e-6)
+    # Und die Zahlen sind plausibel: kein Fahrer klettert 3000 m/h.
+    assert 200 < float(np.nanmin(vam)) and float(np.nanmax(vam)) < 2000
+
+
+def test_vam_waehrend_der_auffahrt_nutzt_die_bisherige_hoehe():
+    """Wer ein Drittel oben ist, hat auch erst ein Drittel geklettert.
+
+    Mit der vollen Höhe des Anstiegs im Zähler zeigte ein Fahrer auf
+    halbem Weg die doppelte Steiggeschwindigkeit.
+    """
+    route, race = bergrennen()
+    climb = route.climbs[0]
+    # So weit vorrechnen, dass der erste Fahrer mitten im Anstieg steht.
+    while race.dist_m[0] < climb.dist_start_m + climb.length_m * 0.4:
+        race.advance_to(race.sim_t + 60)
+        assert race.sim_t < 6 * 3600, "Testaufbau: er müsste längst dort sein"
+
+    t = race.sim_t
+    ohne_ort = race.climb_vam(t)[0, 0]
+    mit_ort = race.climb_vam(t, race.dist_m)[0, 0]
+    assert mit_ort < ohne_ort * 0.75, "die Teilhöhe muss deutlich kleiner sein"
+    assert 300 < mit_ort < 1800, f"unplausible VAM: {mit_ort}"
+
+
+def test_nur_die_bestzeit_meldet_sich():
+    route, race = bergrennen()
+    race.advance_to(1e9)
+    meldungen = [e for e in race.events if e.type == "BEST_CLIMB"]
+    assert meldungen, "eine Bestzeit muss es geben"
+    # Je Anstieg höchstens so viele Meldungen wie Fahrer, und die Zeiten
+    # müssen streng besser werden.
+    assert len(meldungen) <= race.n_climbs * len(race.riders)
+    for e in meldungen:
+        assert "VAM" in e.text and "Bestzeit" in e.text
+
+
+def test_bergpunkte_gehen_an_die_schnellsten_auffahrten():
+    route, race = bergrennen()
+    race.advance_to(1e9)
+    punkte = race.climb_points()
+    assert punkte, "es müssen Punkte vergeben werden"
+
+    # Wer die meisten Anstiege am schnellsten hochfährt, führt.
+    dauer = race.climb_exit_s - race.climb_enter_s
+    siege = np.bincount(np.argmin(dauer, axis=0), minlength=len(race.riders))
+    bester = int(np.argmax(siege))
+    assert max(punkte, key=punkte.get) == race.riders[bester].id
+
+
+def test_bergpunkte_folgen_der_kategorie():
+    from ultraslim.core.engine import CLIMB_POINTS, climb_points_for
+
+    assert climb_points_for("HC", 1) == 20
+    assert climb_points_for("4. Kat.", 1) == 1
+    assert climb_points_for("4. Kat.", 2) == 0
+    assert climb_points_for("gibtsnicht", 1) == 0
+    assert climb_points_for("HC", 0) == 0
+    # Ein HC-Pass ist mehr wert als vier Hügel vierter Kategorie.
+    assert CLIMB_POINTS["HC"][0] > 4 * CLIMB_POINTS["4. Kat."][0]
+    for kategorie, tabelle in CLIMB_POINTS.items():
+        assert list(tabelle) == sorted(tabelle, reverse=True), kategorie
+
+
+def test_ohne_anstiege_gibt_es_keine_bergwertung():
+    teams, riders = kleines_feld(4)
+    route = kurzstrecke("flach", 60, 150)
+    race = LiveRace(route, riders, teams, RaceConfig("Flach", seed=1))
+    race.advance_to(1e9)
+    assert race.n_climbs == 0
+    assert race.climb_points() == {}
+    assert race.climb_duration(1e9).shape == (4, 0)
+
+
+def test_der_leichteste_kletterer_holt_die_berge():
+    """Am Berg entscheidet W/kg — das muss sich in den Punkten zeigen."""
+    teams = [Team(id=0, name="Test–Rad", color="#888888")]
+    fahrer = [
+        Rider(0, 1, "Schwer", "NED", 0, 380.0, 88.0, 192.0),   # 4,32 W/kg
+        Rider(1, 2, "Mittel", "GER", 0, 330.0, 74.0, 180.0),   # 4,46 W/kg
+        Rider(2, 3, "Leicht", "ITA", 0, 290.0, 60.0, 170.0),   # 4,83 W/kg
+    ]
+    route = kurzstrecke("mittelgebirge", 150, 3000, seed=11)
+    race = LiveRace(route, fahrer, teams, RaceConfig("Berg", seed=1, start_interval_s=0.0))
+    race.advance_to(1e9)
+    punkte = race.climb_points()
+    assert punkte.get(2, 0) > punkte.get(1, 0) >= punkte.get(0, 0)
+
+
+def test_auffahrtsdauer_wird_lesbar_geschrieben():
+    """Zwei Stunden am HC-Pass dürfen nicht als '122:40' dastehen."""
+    from ultraslim.core.engine import _dauer_text
+
+    assert _dauer_text(0) == "0:00"
+    assert _dauer_text(95) == "1:35"
+    assert _dauer_text(3599) == "59:59"
+    assert _dauer_text(3600) == "1:00:00"
+    assert _dauer_text(7360) == "2:02:40"

@@ -28,6 +28,7 @@ const SPEEDS = [1, 5, 10, 30, 60, 300, 1000];
  */
 const TICKER_GROUPS = [
   { key: 'zeit', label: 'Zeiten', types: ['BEST_TIME', 'SPLIT_PASSED'] },
+  { key: 'berg', label: 'Berg', types: ['BEST_CLIMB'] },
   { key: 'start', label: 'Starts', types: ['START'] },
   { key: 'ziel', label: 'Ziel', types: ['FINISH'] },
 ];
@@ -48,6 +49,12 @@ const BOARD_COLUMNS = [
   { key: 'trend', label: '±', hint: 'Plätze gewonnen oder verloren seit der Zeitmessung davor' },
   { key: 'tempo', label: 'km/h', hint: 'Momentangeschwindigkeit' },
   { key: 'leistung', label: 'W', hint: 'Tretleistung' },
+  {
+    key: 'vam',
+    label: 'VAM',
+    hint: 'Höhenmeter je Stunde. In der Bergwertung die des gewählten '
+      + 'Anstiegs, sonst die des Anstiegs, in dem der Fahrer gerade steckt.',
+  },
 ];
 
 //: Was ohne eigene Wahl steht.
@@ -206,7 +213,8 @@ function raceLive(raceId) {
      */
     get rows() {
       const raw = this.board ? this.board.rows : [];
-      if (!this.isSplitMode || !this.frame || this.frame.sort !== 'zeit' || this.frame.sort_desc) {
+      const wertung = this.isSplitMode || this.isClimbMode;
+      if (!wertung || !this.frame || this.frame.sort !== 'zeit' || this.frame.sort_desc) {
         return raw;
       }
       if (!raw.some((r) => r.running)) return raw;
@@ -324,12 +332,14 @@ function raceLive(raceId) {
           return row.trend > 0 ? `▲${row.trend}` : row.trend < 0 ? `▼${-row.trend}` : '–';
         case 'tempo': return row.v_kmh.toFixed(1);
         case 'leistung': return row.power_w || '–';
+        case 'vam': return row.vam === null || row.vam === undefined ? '–' : row.vam;
         default: return '';
       }
     },
 
     cellClass(key, row) {
       if (key === 'trend') return row.trend > 0 ? 'pos' : row.trend < 0 ? 'neg' : 'faint';
+      if (key === 'vam') return row.vam === null || row.vam === undefined ? 'faint' : '';
       return '';
     },
 
@@ -364,7 +374,9 @@ function raceLive(raceId) {
     //: berechnen.
     rowGap(row) {
       if (row.gap_s === null || row.gap_s === undefined) return null;
-      return this.isSplitMode && row.running ? row.gap_s + this.liveDelta : row.gap_s;
+      return (this.isSplitMode || this.isClimbMode) && row.running
+        ? row.gap_s + this.liveDelta
+        : row.gap_s;
     },
     get isSplitMode() { return !!(this.frame && this.frame.mode === 'split'); },
 
@@ -488,8 +500,9 @@ function raceLive(raceId) {
       const send = (action, value) => this.send(action, value);
       if (Number.isInteger(saved.focus)) await send('focus', saved.focus);
       if (saved.autoFocus) await send('auto_focus', true);
-      if (saved.mode === 'split') await send('mode', 'split');
+      if (saved.mode === 'split' || saved.mode === 'climb') await send('mode', saved.mode);
       if (Number.isInteger(saved.split)) await send('split', saved.split);
+      if (Number.isInteger(saved.climb)) await send('climb', saved.climb);
       if (saved.speed) await send('speed', saved.speed);
       await send('seek', saved.t);
       if (saved.playing) await send('play', true);
@@ -504,6 +517,7 @@ function raceLive(raceId) {
           focus: this.frame.focus.entry_id,
           mode: this.frame.mode,
           split: this.frame.board && this.frame.board.split ? this.frame.board.split.idx : null,
+          climb: this.frame.board && this.frame.board.climb ? this.frame.board.climb.idx : null,
           playing: this.frame.playing,
           autoFocus: this.frame.auto_focus,
         }));
@@ -576,7 +590,23 @@ function raceLive(raceId) {
     setFocus(entryId) { this.control('focus', entryId); },
     setSplit(idx) { this.control('split', Number(idx)); },
     setSpeed(v) { this.control('speed', Number(v)); },
-    toggleMode() { this.control('mode', this.frame.mode === 'virtual' ? 'split' : 'virtual'); },
+    //: Drei Wertungen im Kreis: virtuell -> Split -> Berg -> virtuell.
+    //: Auf einer Strecke ohne kategorisierten Anstieg überspringt der
+    //: Server die Bergwertung und landet wieder bei der Splitwertung —
+    //: eine leere Tabelle wäre keine Antwort.
+    toggleMode() {
+      const naechste = { virtual: 'split', split: 'climb', climb: 'virtual' };
+      this.control('mode', naechste[this.frame.mode] || 'virtual');
+    },
+    modeLabel() {
+      if (!this.frame) return '';
+      return { virtual: 'Virtuelle Rangliste', split: 'Splitwertung', climb: 'Bergwertung' }[
+        this.frame.mode
+      ] || '';
+    },
+    get isClimbMode() { return !!(this.frame && this.frame.mode === 'climb'); },
+    get climb() { return this.board ? this.board.climb : null; },
+    setClimb(idx) { this.control('climb', Number(idx)); },
     seekFraction(f) { this.control('seek', f * this.frame.horizon_s); },
 
     showTooltip(info) {
