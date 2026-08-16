@@ -1,0 +1,122 @@
+{% extends "base.html" %}
+{% block title %}{{ season.name }}{% endblock %}
+{% block subtitle %}{{ season.name }} · {{ n_done }} von {{ calendar|length }} Rennen gefahren{% endblock %}
+{% block topbar %}<a class="faint" href="/">◂ Hauptmenü</a>
+<a class="faint" href="/fahrer">Fahrer</a>{% endblock %}
+
+{% block body %}
+<div class="page">
+
+  <div class="panel">
+    <div class="panel-title"><span>Kalender</span><span class="faint">{{ calendar|length }} Termine</span></div>
+    <table>
+      <thead>
+        <tr><th>#</th><th>Rennen</th><th class="right">Distanz</th><th class="right">Höhenmeter</th>
+            <th>Profil</th><th class="right">höchster Punkt</th><th>Stand</th><th>Sieger</th><th></th></tr>
+      </thead>
+      <tbody>
+        {% for e in calendar %}
+        <tr>
+          <td class="mono faint">{{ loop.index }}</td>
+          <td>{{ e.spec.name }}</td>
+          <td class="right mono">{{ '%.0f'|format(e.route.distance_km) }} km</td>
+          <td class="right mono">{{ e.route.ascent_m }} m</td>
+          <td><span class="badge">{{ e.route.archetype_label }}</span></td>
+          <td class="right mono faint">{{ e.route.max_elevation_m }} m</td>
+          <td>
+            {% if e.live %}<span class="badge running">live</span>
+            {% elif e.done %}<span class="badge">gefahren</span>
+            {% else %}<span class="dim">offen</span>{% endif %}
+          </td>
+          <td>{% if e.winner %}{{ e.winner.name }}
+              <span class="faint mono">{{ e.winner_time_s|hms }}</span>{% else %}<span class="dim">—</span>{% endif %}</td>
+          <td>
+            <div class="actions">
+              {% if e.live %}
+              <a href="/race/{{ e.race_id }}"><button class="primary">Zur Übertragung</button></a>
+              {% elif e.done %}
+              <a href="/race/{{ e.race_id }}/ergebnis"><button>Ergebnis</button></a>
+              <form method="post" action="/season/{{ season.id }}/race/{{ e.spec.route_id }}/start?reset=true"
+                    style="display:inline">
+                <button title="Ergebnis verwerfen und das Rennen neu fahren">neu fahren</button>
+              </form>
+              {% else %}
+              <form method="post" action="/season/{{ season.id }}/race/{{ e.spec.route_id }}/start"
+                    style="display:inline">
+                <button class="primary"
+                        title="Der erste Tick fällt jetzt. Vorberechnet wird nichts.">
+                  Übertragung starten
+                </button>
+              </form>
+              {% endif %}
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <div class="panel">
+    <div class="panel-title">
+      <span>Fahrerwertung</span>
+      <span class="faint">Punkte 100/80/65/55/50/45/40/36/32/28 … für die Top 20</span>
+    </div>
+    {% if n_done %}
+    <table>
+      <thead>
+        <tr><th>Rg</th><th>Nr</th><th>Fahrer</th><th>Team</th>
+            <th class="right">Punkte</th><th class="right">Siege</th><th class="right">Podien</th>
+            {% for e in calendar %}<th class="right" title="{{ e.spec.name }}">R{{ loop.index }}</th>{% endfor %}</tr>
+      </thead>
+      <tbody>
+        {% for s in riders_table %}
+        <tr>
+          <td class="rank">{{ loop.index }}</td>
+          <td class="bib">{{ s.rider.bib }}</td>
+          <td><span class="swatch" style="background:{{ s.team.color }}"></span>
+              <span class="flag flag-{{ s.rider.nation }}" title="{{ s.rider.nation }}"></span>
+              {{ s.rider.name }}</td>
+          <td class="dim">{{ s.team.name }}</td>
+          <td class="right mono"><strong>{{ s.points }}</strong></td>
+          <td class="right mono">{{ s.wins or '' }}</td>
+          <td class="right mono">{{ s.podiums or '' }}</td>
+          {% for p in s.per_race %}<td class="right mono {% if not p %}faint{% endif %}">{{ p or '·' }}</td>{% endfor %}
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    <p class="dim" style="font-size:.72rem;margin-top:.4rem">Die besten dreißig von 300.</p>
+    {% else %}
+    <p class="dim">Noch kein Rennen gefahren. Die Wertung entsteht aus Ergebnissen, nicht aus Prognosen.</p>
+    {% endif %}
+  </div>
+
+  <div class="panel">
+    <div class="panel-title"><span>Teamwertung</span><span class="faint">Summe aller zwölf Fahrer</span></div>
+    {% if n_done %}
+    <table>
+      <thead>
+        <tr><th>Rg</th><th>Team</th><th>bester Fahrer</th><th class="right">Punkte</th><th class="right">Siege</th>
+            {% for e in calendar %}<th class="right" title="{{ e.spec.name }}">R{{ loop.index }}</th>{% endfor %}</tr>
+      </thead>
+      <tbody>
+        {% for s in teams_table %}
+        <tr>
+          <td class="rank">{{ loop.index }}</td>
+          <td><span class="swatch" style="background:{{ s.team.color }}"></span>{{ s.team.name }}</td>
+          <td class="dim">{{ s.top_rider.name if s.top_rider else '—' }}</td>
+          <td class="right mono"><strong>{{ s.points }}</strong></td>
+          <td class="right mono">{{ s.wins or '' }}</td>
+          {% for p in s.per_race %}<td class="right mono {% if not p %}faint{% endif %}">{{ p or '·' }}</td>{% endfor %}
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p class="dim">Noch kein Rennen gefahren.</p>
+    {% endif %}
+  </div>
+
+</div>
+{% endblock %}

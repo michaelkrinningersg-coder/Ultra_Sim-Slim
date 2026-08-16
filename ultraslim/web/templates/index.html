@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% block title %}UltraSim Slim – Hauptmenü{% endblock %}
+
+{% block body %}
+<div class="page">
+
+  <div class="panel">
+    <div class="panel-title"><span>Saison wählen</span><span class="faint">{{ seasons|length }}</span></div>
+    <p class="dim" style="max-width:74ch;margin-bottom:.8rem">
+      Jede Saison fährt denselben Kalender aus sechs Rennen über dieselben
+      sechs Strecken — die Profile sind Meter für Meter identisch. Was sich
+      unterscheidet, ist die Tagesform des Feldes. Ein Rennen wird
+      <strong>nie vorberechnet</strong>: Der erste Tick fällt, wenn die
+      Übertragung startet, und gerechnet wird immer nur bis dorthin, wo die
+      Uhr des Zuschauers steht.
+    </p>
+    <div class="cards">
+      {% for entry in seasons %}
+      <div class="card">
+        <h2>{{ entry.season.name }}</h2>
+        <div class="meta">
+          {{ entry.n_done }} von {{ entry.n_races }} Rennen gefahren<br>
+          {% if entry.leader %}Führend: {{ entry.leader }}{% else %}Noch keine Wertung{% endif %}
+        </div>
+        <div class="actions">
+          <a href="/season/{{ entry.season.id }}"><button class="primary">Kalender öffnen</button></a>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-title"><span>Das Feld</span><span class="faint">{{ n_riders }} Fahrer · {{ n_teams }} Teams</span></div>
+    <p class="dim" style="max-width:74ch">
+      Dreihundert Fahrer aus acht Nationen, verteilt auf fünfundzwanzig
+      Teams zu je zwölf. Ein Fahrer hat genau drei Eigenschaften: FTP,
+      Gewicht und Größe. Alles andere — wie schnell er im Flachen ist, wie
+      er am Berg wegkommt, wie er sich in der Abfahrt schlägt — folgt
+      daraus und aus der Physik, nicht aus einem weiteren Attribut.
+      <a href="/fahrer">Fahrer und Teams ansehen ▸</a>
+    </p>
+  </div>
+
+  <div class="panel">
+    <div class="panel-title"><span>Das Modell</span></div>
+    <table>
+      <thead><tr><th>Größe</th><th>Wert</th><th>Herkunft</th></tr></thead>
+      <tbody>
+        <tr><td>Antriebsstrang</td><td class="mono">η = 0,975</td><td class="dim">Kette, Ritzel, Lager</td></tr>
+        <tr><td>Rollwiderstand</td><td class="mono">Crr = 0,0040 + 0,00005·v</td>
+            <td class="dim">Racing-Clincher 25–28 mm auf gutem Asphalt</td></tr>
+        <tr><td>Rad</td><td class="mono">7,5 kg</td><td class="dim">Straßenrennrad, für alle gleich</td></tr>
+        <tr><td>Frontalfläche</td><td class="mono">A = 0,0276 · h<sup>0,725</sup> · m<sup>0,425</sup></td>
+            <td class="dim">Du-Bois-Form, h in m, m in kg</td></tr>
+        <tr><td>Luftwiderstand</td><td class="mono">CdA = A · k</td>
+            <td class="dim">k = 1,20 Unterlenker, 1,45 am Anstieg, gleitend</td></tr>
+        <tr><td>Luftdichte</td><td class="mono">ρ(h)</td><td class="dim">barometrische Höhenformel, 15 °C</td></tr>
+        <tr><td>Zielleistung</td><td class="mono">FTP · IF · Tagesform</td>
+            <td class="dim">IF von 0,72 bei 300 km auf 0,60 bei 1000 km</td></tr>
+        <tr><td>Steigungsmodulation</td><td class="mono">1,00 → 1,15 ab 8 %</td>
+            <td class="dim">bergab 0,55 ab 4 % Gefälle</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+</div>
+{% endblock %}

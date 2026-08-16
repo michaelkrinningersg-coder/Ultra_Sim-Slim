@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block title %}{{ spec.name }} – Ergebnis{% endblock %}
+{% block subtitle %}{{ season.name }} · {{ spec.name }} ·
+  {{ '%.0f'|format(route.distance_km) }} km · {{ route.ascent_m }} hm{% endblock %}
+{% block topbar %}<a class="faint" href="/season/{{ season.id }}">◂ {{ season.name }}</a>
+<a class="faint" href="/">Hauptmenü</a>{% endblock %}
+
+{% block body %}
+<div class="page">
+  <div class="panel">
+    <div class="panel-title"><span>Ergebnis</span><span class="faint">{{ rows|length }} im Ziel</span></div>
+    <p class="dim" style="font-size:.75rem;margin-bottom:.6rem">
+      Einzelstart im Zehn-Minuten-Takt — gewertet wird die gefahrene Zeit,
+      nicht die Reihenfolge am Zielstrich.
+    </p>
+    <table class="board">
+      <thead>
+        <tr><th>Rg</th><th>Nr</th><th>Fahrer</th><th>Team</th>
+            <th class="right">Zeit</th><th class="right">Rückstand</th>
+            <th class="right">Ø km/h</th>
+            <th class="right">FTP</th><th class="right">kg</th><th class="right">W/kg</th>
+            <th class="right">Punkte</th></tr>
+      </thead>
+      <tbody>
+        {% for r in rows %}
+        <tr>
+          <td class="rank">{{ r.rank }}</td>
+          <td class="bib">{{ r.rider.bib }}</td>
+          <td><span class="swatch" style="background:{{ r.team.color }}"></span>
+              <span class="flag flag-{{ r.rider.nation }}" title="{{ r.rider.nation }}"></span>
+              {{ r.rider.name }}</td>
+          <td class="dim">{{ r.team.name }}</td>
+          <td class="time">{{ r.time_s|hms }}</td>
+          <td class="gap">{% if r.gap_s %}+{{ r.gap_s|hms }}{% endif %}</td>
+          <td class="right mono">{{ '%.1f'|format(route.distance_km / (r.time_s / 3600)) }}</td>
+          <td class="right mono faint">{{ r.rider.ftp_w|round|int }}</td>
+          <td class="right mono faint">{{ '%.1f'|format(r.rider.weight_kg) }}</td>
+          <td class="right mono faint">{{ '%.2f'|format(r.rider.w_per_kg) }}</td>
+          <td class="right mono">{% if r.rank <= 20 %}{{ [100,80,65,55,50,45,40,36,32,28,26,24,22,20,18,16,14,12,10,8][r.rank-1] }}{% endif %}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

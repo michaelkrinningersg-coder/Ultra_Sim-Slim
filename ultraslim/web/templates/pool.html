@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% block title %}Fahrer und Teams{% endblock %}
+{% block subtitle %}{{ riders|length }} Fahrer · {{ teams|length }} Teams · 8 Nationen{% endblock %}
+{% block topbar %}<a class="faint" href="/">◂ Hauptmenü</a>{% endblock %}
+
+{% block body %}
+<div class="page">
+
+  <div class="panel">
+    <div class="panel-title"><span>Teams</span><span class="faint">{{ teams|length }}</span></div>
+    <p class="dim" style="font-size:.75rem;margin-bottom:.6rem">
+      Ausrüster und Radmarke, wie im echten Radsport. <strong>Die Marken sind
+      echt, die Teams sind es nicht</strong> — keine der genannten Firmen hat
+      mit diesem Programm zu tun oder weiß davon.
+    </p>
+    <div class="cards">
+      {% for t in teams %}
+      <div class="card" style="padding:.5rem .7rem">
+        <h2 style="font-size:.88rem"><span class="swatch" style="background:{{ t.color }}"></span>{{ t.name }}</h2>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-title"><span>Fahrer</span><span class="faint">nach relativer FTP</span></div>
+    <p class="dim" style="font-size:.75rem;margin-bottom:.6rem">
+      Drei Eigenschaften je Fahrer. Die Frontalfläche ist daraus abgeleitet
+      (A = 0,0276 · h<sup>0,725</sup> · m<sup>0,425</sup>) und nicht selbst
+      gewürfelt — sie ist Folge des Körperbaus, keine eigene Größe.
+    </p>
+    <table class="board">
+      <thead>
+        <tr><th>#</th><th>Nr</th><th>Fahrer</th><th>Team</th>
+            <th class="right">FTP</th><th class="right">Gewicht</th><th class="right">Größe</th>
+            <th class="right">W/kg</th><th class="right">A<sub>frontal</sub></th></tr>
+      </thead>
+      <tbody>
+        {% for r in riders %}
+        <tr id="f{{ r.id }}">
+          <td class="rank">{{ loop.index }}</td>
+          <td class="bib">{{ r.bib }}</td>
+          <td><span class="swatch" style="background:{{ teams[r.team_id].color }}"></span>
+              <span class="flag flag-{{ r.nation }}" title="{{ r.nation }}"></span>
+              {{ r.name }}</td>
+          <td class="dim">{{ teams[r.team_id].name }}</td>
+          <td class="right mono">{{ r.ftp_w|round|int }} W</td>
+          <td class="right mono">{{ '%.1f'|format(r.weight_kg) }} kg</td>
+          <td class="right mono">{{ r.height_cm|round|int }} cm</td>
+          <td class="right mono"><strong>{{ '%.2f'|format(r.w_per_kg) }}</strong></td>
+          <td class="right mono faint">{{ '%.3f'|format(r.frontal_area_m2) }} m²</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+</div>
+{% endblock %}

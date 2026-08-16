@@ -1,0 +1,714 @@
+/* UltraSim – Oberfläche im Stil einer Wintersport-Übertragung.
+   Dunkler Grund, kräftige Akzente, Zahlen in Tabellenziffern. */
+
+:root {
+  --bg: #0b0f16;
+  --bg-panel: #131926;
+  --bg-panel-2: #1a2233;
+  --line: #263149;
+  --fg: #e8edf7;
+  --fg-dim: #8f9cb5;
+  --fg-faint: #5c6880;
+  --accent: #ffc247;
+  --accent-2: #47b4ff;
+  --good: #4ade80;
+  --bad: #f8717a;
+  --flat: #3f8f5a;
+  --climb: #d9534f;
+  --steep: #ff3b30;
+  --descent: #3d7fd1;
+  --radius: 6px;
+  --mono: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font: 14px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-variant-numeric: tabular-nums;
+}
+
+a { color: var(--accent-2); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+h1, h2, h3 { margin: 0 0 .5rem; font-weight: 600; letter-spacing: .01em; }
+h1 { font-size: 1.25rem; }
+h2 { font-size: 1.05rem; }
+h3 { font-size: .9rem; color: var(--fg-dim); text-transform: uppercase; letter-spacing: .08em; }
+
+.mono { font-family: var(--mono); }
+.dim { color: var(--fg-dim); }
+.faint { color: var(--fg-faint); }
+.good { color: var(--good); }
+.warn { color: var(--accent); }
+.bad { color: var(--bad); }
+.right { text-align: right; }
+.nowrap { white-space: nowrap; }
+
+/* ---------- Rahmen ---------- */
+.topbar {
+  display: flex; align-items: center; gap: 1rem;
+  padding: .55rem .9rem;
+  background: var(--bg-panel);
+  border-bottom: 1px solid var(--line);
+  position: sticky; top: 0; z-index: 20;
+}
+.topbar .brand { font-weight: 700; letter-spacing: .12em; color: var(--accent); }
+.topbar .spacer { flex: 1; }
+/* Ein Knopf, der wie ein Link aussieht: In der Kopfzeile stehen sonst
+   nur Links, und ein Formularknopf muss es sein, weil das Beenden einer
+   Übertragung kein GET sein darf. */
+.linkish { background: none; border: 0; padding: 0; cursor: pointer;
+           color: var(--fg-faint); font-size: inherit; font-family: inherit; }
+.linkish:hover { color: var(--fg); text-decoration: underline; }
+
+.page { padding: 1rem; max-width: 1500px; margin: 0 auto; }
+
+.panel {
+  background: var(--bg-panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: .75rem .9rem;
+}
+.panel + .panel { margin-top: .8rem; }
+.panel-title {
+  font-size: .72rem; text-transform: uppercase; letter-spacing: .1em;
+  color: var(--fg-dim); margin-bottom: .5rem;
+  display: flex; justify-content: space-between; align-items: baseline; gap: .5rem;
+}
+
+/* ---------- Live-Ansicht ---------- */
+.live {
+  display: grid;
+  grid-template-columns: 280px minmax(0, 1fr);
+  gap: .8rem;
+  padding: .8rem;
+  align-items: start;
+}
+@media (max-width: 1100px) { .live { grid-template-columns: 1fr; } }
+
+.sidebar { display: flex; flex-direction: column; gap: .8rem; position: sticky; top: 52px; }
+.stage { display: flex; flex-direction: column; gap: .8rem; min-width: 0; }
+
+/* ---------- Steuerleiste ---------- */
+.controls { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem; }
+button, select {
+  background: var(--bg-panel-2); color: var(--fg);
+  border: 1px solid var(--line); border-radius: var(--radius);
+  padding: .32rem .6rem; font: inherit; cursor: pointer;
+}
+button:hover, select:hover { border-color: var(--accent-2); }
+button.primary { background: var(--accent); color: #1a1206; border-color: var(--accent); font-weight: 600; }
+button.on { border-color: var(--accent); color: var(--accent); }
+button:disabled { opacity: .4; cursor: default; }
+
+.scrub { flex: 1 1 220px; min-width: 160px; accent-color: var(--accent); }
+
+/* ---------- Kopfzahlen ---------- */
+.readout { display: flex; flex-wrap: wrap; gap: 1.1rem; align-items: baseline; }
+.readout .item { display: flex; flex-direction: column; }
+.readout .k { font-size: .64rem; text-transform: uppercase; letter-spacing: .1em; color: var(--fg-faint); }
+.readout .v { font-family: var(--mono); font-size: 1.05rem; }
+.readout .v.big { font-size: 1.6rem; color: var(--accent); font-weight: 600; }
+
+/* ---------- Kennzahlengitter des Fokusfahrers ----------
+   Vorher war das eine umbrechende Flexbox: Jede Zelle so breit wie ihr
+   Inhalt, also in jeder Zeile andere Spaltenpositionen und ein Umbruch,
+   den die Fensterbreite bestimmt hat statt wir. Hier steht ein festes
+   Raster — drei gleich breite Spalten, vier Zeilen, Gruppen durch eine
+   Linie getrennt. Die Einheit gehört in die Beschriftung, damit im Wert
+   nur die Zahl steht und die Ziffern untereinander stehen. */
+.statgrid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .5rem .5rem; }
+.statgrid .cell { display: flex; flex-direction: column; min-width: 0; }
+.statgrid .k {
+  font-size: .58rem; text-transform: uppercase; letter-spacing: .07em;
+  color: var(--fg-faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+/* Einheiten in Kleinschreibung, obwohl die Beschriftung in Versalien
+   steht: „KM/H" ist keine Einheit, „km/h" ist eine. Das SI-System
+   unterscheidet Groß- und Kleinschreibung, und ein Board, das Physik
+   anzeigt, sollte sich daran halten. */
+.statgrid .k .u { color: #414c63; margin-left: .2em; text-transform: none; letter-spacing: 0; }
+.statgrid .v { font-family: var(--mono); font-size: 1.02rem; line-height: 1.3; }
+/* Das Rad ist der einzige Wert, der keine Zahl ist. Der Chip muss
+   deshalb in eine Spalte passen, die für dreistellige Zahlen bemessen
+   ist — sonst schiebt er das Raster auseinander, das er eigentlich
+   nutzen soll. */
+.statgrid .v.wide { font-size: .82rem; line-height: 1.4; }
+.statgrid .v.wide .chip {
+  font-size: .55rem; padding: .05rem .28rem; letter-spacing: .02em;
+  max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+/* Trennlinie zwischen zwei Gruppen. Sie kostet drei Pixel Höhe und
+   ersetzt drei Überschriften, für die im Seitenstreifen kein Platz ist. */
+.statgrid .sep { grid-column: 1 / -1; height: 1px; background: var(--line); margin: .1rem 0; }
+
+.chip {
+  display: inline-block; padding: .05rem .4rem; border-radius: 3px;
+  font-size: .68rem; letter-spacing: .04em; text-transform: uppercase;
+  background: var(--bg-panel-2); border: 1px solid var(--line); color: var(--fg-dim);
+}
+.chip.tt { border-color: var(--accent-2); color: var(--accent-2); }
+.chip.stop { border-color: var(--bad); color: var(--bad); }
+.chip.fin { border-color: var(--good); color: var(--good); }
+.chip.cond { border-color: var(--bad); color: var(--bad); }
+.chip.dnf { border-color: var(--bad); background: var(--bad); color: var(--bg-panel); }
+
+/* Ausgeschieden: die Zeile bleibt lesbar, tritt aber zurück. Sie ganz zu
+   entfernen wäre falsch – die Zuschauer wollen sehen, wer fehlt. */
+tr.dnf td { opacity: .45; text-decoration: line-through; }
+tr.dnf td:last-child { text-decoration: none; opacity: 1; }
+
+.cond-row { display: flex; align-items: center; gap: .4rem; padding: .1rem 0; }
+.cond-row.done { opacity: .55; }
+
+/* ---------- Profil ---------- */
+.profile-wrap { display: flex; flex-direction: column; gap: .35rem; }
+canvas.profile { width: 100%; display: block; border-radius: 4px; background: #0d121c; cursor: crosshair; }
+.legend { display: flex; gap: .8rem; flex-wrap: wrap; font-size: .7rem; color: var(--fg-faint); }
+.legend i { display: inline-block; width: .7rem; height: .7rem; border-radius: 2px; margin-right: .25rem; vertical-align: -1px; }
+
+.tooltip {
+  position: fixed; z-index: 40; pointer-events: none;
+  background: #05070c; border: 1px solid var(--line); border-radius: 4px;
+  padding: .3rem .5rem; font-size: .75rem; white-space: pre; box-shadow: 0 4px 14px #0008;
+}
+
+/* ---------- Board ---------- */
+table { width: 100%; border-collapse: collapse; }
+th {
+  text-align: left; font-size: .66rem; text-transform: uppercase; letter-spacing: .08em;
+  color: var(--fg-faint); font-weight: 500; padding: .25rem .35rem;
+  border-bottom: 1px solid var(--line);
+}
+td { padding: .18rem .35rem; border-bottom: 1px solid #1a2131; }
+
+.board { font-size: .82rem; }
+.board tbody tr { transition: background-color .25s ease; }
+.board tr.focus { background: #2a2410; box-shadow: inset 3px 0 0 var(--accent); }
+.board tr.leader-row { background: #101a26; }
+.board tr.provisional td { color: var(--fg-faint); font-style: italic; }
+.board tr.neighbour { background: #141b28; }
+.board td.rank { font-family: var(--mono); color: var(--fg-dim); width: 2.6rem; }
+.board td.bib { font-family: var(--mono); color: var(--fg-faint); width: 2.4rem; }
+.board td.time, .board td.gap { font-family: var(--mono); text-align: right; white-space: nowrap; }
+.board td.gap.pos { color: var(--bad); }
+.board td.gap.neg { color: var(--good); }
+.board .swatch { display: inline-block; width: .45rem; height: .95rem; border-radius: 1px; margin-right: .45rem; vertical-align: -2px; }
+.board .clickable { cursor: pointer; }
+.board .clickable:hover { background: #1b2436; }
+.board tr.pinned { box-shadow: inset -3px 0 0 var(--accent-2); }
+/* Zahlenspalten brechen nicht um: "85 %" über zwei Zeilen kostet die
+   halbe Tabellenhöhe und liest sich als zwei Werte. */
+.board td.mono, .board th { white-space: nowrap; }
+/* Sortierbare Überschriften: der Pfeil sitzt an der aktiven Spalte,
+   der Rest gibt sich erst beim Überfahren zu erkennen. */
+.board th.clickable { cursor: pointer; user-select: none; }
+.board th.clickable:hover { color: var(--fg); }
+
+/* Nadel zum Anheften. Sie ist blass, bis sie steckt — sonst zieht eine
+   Spalte aus einundvierzig Nadeln mehr Aufmerksamkeit als die Zeiten. */
+.pin { background: none; border: 0; padding: 0 .2rem; cursor: pointer;
+       font-size: .72rem; opacity: .18; filter: grayscale(1); }
+.pin:hover { opacity: .8; filter: none; }
+.pin.on { opacity: 1; filter: none; }
+
+/* Spaltenwahl und Duellleiste */
+.colpicker { display: flex; flex-wrap: wrap; gap: .25rem; margin: .35rem 0 .1rem;
+             padding-bottom: .35rem; border-bottom: 1px solid var(--line); }
+.duel { display: flex; align-items: center; gap: .6rem; flex-wrap: wrap;
+        margin: .35rem 0; padding: .3rem .45rem; border-radius: var(--radius);
+        background: var(--bg-panel-2); border: 1px solid var(--line); }
+.duel-side { display: inline-flex; align-items: center; gap: .35rem; font-size: .8rem;
+             cursor: pointer; }
+.duel-side .swatch { display: inline-block; width: .45rem; height: .95rem;
+                     border-radius: 1px; vertical-align: -2px; }
+.duel-gap { font-size: .82rem; color: var(--accent); margin-left: auto; }
+
+/* Gruppenköpfe der Startliste */
+.groupbar { display: flex; align-items: center; gap: .25rem; margin-top: .35rem;
+            font-size: .68rem; }
+.grouphead { display: flex; align-items: center; gap: .4rem; cursor: pointer;
+             padding: .2rem .1rem; font-size: .72rem; color: var(--fg-dim);
+             border-bottom: 1px solid var(--line); position: sticky; top: 0;
+             background: var(--bg-panel); }
+.grouphead:hover { color: var(--fg); }
+.grouphead .faint { margin-left: auto; }
+
+.board-head {
+  display: flex; justify-content: space-between; align-items: center;
+  gap: .5rem; margin-bottom: .35rem; font-size: .78rem; color: var(--fg-dim);
+}
+
+/* ---------- Ticker ---------- */
+.ticker { max-height: 190px; overflow-y: auto; font-size: .78rem; }
+.ticker div { padding: .12rem 0; border-bottom: 1px solid #171e2c; color: var(--fg-dim); }
+.ticker div.focus { color: var(--fg); }
+.ticker .t { font-family: var(--mono); color: var(--fg-faint); margin-right: .5rem; }
+
+/* ---------- Startliste ---------- */
+.startlist { max-height: 46vh; overflow-y: auto; font-size: .78rem; }
+.startlist .row {
+  display: grid; grid-template-columns: 2.1rem 1fr auto; gap: .3rem;
+  padding: .16rem .25rem; border-radius: 3px; cursor: pointer; align-items: center;
+}
+.startlist .row:hover { background: var(--bg-panel-2); }
+.startlist .row.focus { background: #2a2410; color: var(--accent); }
+.startlist .row .b { font-family: var(--mono); color: var(--fg-faint); }
+
+.field-input { width: 100%; background: var(--bg-panel-2); border: 1px solid var(--line);
+  color: var(--fg); border-radius: var(--radius); padding: .28rem .45rem; font: inherit; }
+
+/* ---------- Karten auf der Startseite ---------- */
+.cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: .8rem; }
+.card { background: var(--bg-panel); border: 1px solid var(--line); border-radius: var(--radius); padding: .8rem; }
+.card h2 { font-size: 1rem; }
+.card .meta { color: var(--fg-dim); font-size: .8rem; }
+.card .actions { margin-top: .6rem; display: flex; gap: .4rem; }
+
+.badge { font-size: .68rem; padding: .08rem .38rem; border-radius: 999px; border: 1px solid var(--line); color: var(--fg-dim); }
+.badge.kurz { border-color: #3f8f5a; color: #7fd6a0; }
+.badge.mittel { border-color: #b48a2a; color: var(--accent); }
+.badge.ultra { border-color: #b0453f; color: #ff8f88; }
+/* Ein Rennen, das gerade gerechnet wird. Der Punkt pulst, weil ein
+   statisches "live" nach Beschriftung aussieht und nicht nach Zustand. */
+.badge.running { border-color: #b0453f; color: #ff8f88; letter-spacing: .06em; text-transform: uppercase; }
+.badge.running::before { content: "●"; margin-right: .25rem; animation: livepulse 1.6s ease-in-out infinite; }
+@keyframes livepulse { 0%, 100% { opacity: 1; } 50% { opacity: .25; } }
+@media (prefers-reduced-motion: reduce) { .badge.running::before { animation: none; } }
+
+.spoiler { border: 1px dashed #4a3a12; background: #1c1608; color: var(--accent); padding: .4rem .6rem; border-radius: var(--radius); font-size: .8rem; }
+
+/* ---------- Ultrameister ----------
+   Der Titel bekommt einmal im Jahr eine eigene Fläche. Sie steht ganz
+   oben auf der Saisonseite und erscheint erst, wenn der letzte Termin
+   gefahren ist — vorher ist die Rangliste ein Zwischenstand. */
+.titlepanel { border-color: var(--accent); background: linear-gradient(180deg, #1e1a0c, var(--bg-panel) 70%); }
+.champion { display: flex; align-items: center; gap: 1rem; }
+.champion .laurel { font-size: 2.6rem; line-height: 1; }
+.champion-name { font-size: 1.5rem; font-weight: 700; color: var(--accent); letter-spacing: .01em; }
+.champion-figures { display: flex; flex-wrap: wrap; gap: .9rem; margin-top: .3rem; color: var(--fg-dim); font-size: .85rem; }
+.champion-figures strong { color: var(--fg); font-family: var(--mono); font-size: 1rem; }
+tr.champion-row td { background: #241f0d; color: var(--accent); }
+
+.attrgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: .3rem .9rem; }
+.attr { display: grid; grid-template-columns: 7.5rem 1fr 2.2rem; align-items: center; gap: .4rem; font-size: .78rem; }
+.attr .bar { height: .5rem; background: var(--bg-panel-2); border-radius: 999px; overflow: hidden; }
+.attr .bar > span { display: block; height: 100%; background: var(--accent-2); }
+.attr.inactive { color: var(--fg-faint); }
+.attr.inactive .bar > span { background: #3a475e; }
+
+.chart { width: 100%; height: 180px; }
+.u-legend { font-size: .75rem; }
+
+/* ---------- Editoren und Formulare (M7) ---------- */
+input[type="text"], input[type="number"], input[type="date"] {
+  background: var(--bg-panel-2); color: var(--fg);
+  border: 1px solid var(--line); border-radius: var(--radius);
+  padding: .3rem .5rem; font: inherit; font-variant-numeric: tabular-nums;
+}
+input:focus, select:focus { outline: none; border-color: var(--accent); }
+
+.form-row { display: flex; flex-wrap: wrap; align-items: flex-end; gap: .6rem; }
+.form-row label {
+  display: flex; flex-direction: column; gap: .18rem;
+  font-size: .64rem; text-transform: uppercase; letter-spacing: .1em; color: var(--fg-faint);
+}
+.form-row input, .form-row select { min-width: 6rem; }
+.form-row input[type="text"] { min-width: 11rem; }
+
+form.inline { display: inline; }
+button.danger { border-color: var(--bad); color: var(--bad); }
+button.danger:hover { background: var(--bad); color: var(--bg); border-color: var(--bad); }
+
+/* Der Zeilen-Editor bleibt eingeklappt: Ein Kalender mit zwanzig
+   aufgeklappten Formularen wäre nicht mehr lesbar. Aufgeklappt schwebt er
+   als Popover über der Tabelle statt in der Zelle zu stehen — ein
+   Formular mit sieben Feldern passt in keine Tabellenspalte, und die
+   Spaltenbreiten dürfen sich beim Aufklappen nicht verschieben. */
+table.calendar td { position: relative; }
+details.edit { display: inline-block; margin-left: .3rem; }
+details.edit > summary {
+  list-style: none; cursor: pointer; color: var(--fg-faint);
+  border: 1px solid var(--line); border-radius: var(--radius); padding: .32rem .5rem;
+}
+details.edit > summary::-webkit-details-marker { display: none; }
+details.edit[open] > summary { border-color: var(--accent); color: var(--accent); }
+details.edit > .editor {
+  position: absolute; right: 0; top: calc(100% + .2rem); z-index: 6;
+  width: min(56rem, calc(100vw - 4rem));
+  padding: .7rem; text-align: left;
+  background: var(--bg-panel-2); border: 1px solid var(--accent);
+  border-radius: var(--radius); box-shadow: 0 10px 28px #000a;
+}
+details.edit .row-actions { display: flex; gap: .5rem; margin-top: .6rem; }
+
+table.calendar tr.done td { color: var(--fg-dim); }
+table.calendar tr.done td:first-child { color: var(--good); }
+
+/* ---------- Fortschritt der Hintergrundrechnungen ---------- */
+.joblist { display: flex; flex-direction: column; gap: .35rem; margin-bottom: .7rem; }
+.job { display: flex; align-items: center; gap: .6rem; font-size: .78rem; }
+.job .bar {
+  flex: 1 1 160px; height: 6px; border-radius: 999px;
+  background: var(--bg-panel-2); border: 1px solid var(--line); overflow: hidden;
+}
+.job .bar .fill { display: block; height: 100%; background: var(--accent); transition: width .4s linear; }
+[x-cloak] { display: none !important; }
+
+/* ---------- Streckeneditor (M5b) ---------- */
+input[type="file"] {
+  background: var(--bg-panel-2); color: var(--fg-dim);
+  border: 1px dashed var(--line); border-radius: var(--radius);
+  padding: .3rem .5rem; font: inherit; max-width: 22rem;
+}
+input:disabled, select:disabled { opacity: .5; cursor: default; }
+
+.import-report { display: flex; flex-wrap: wrap; gap: .3rem 1.6rem; }
+.import-report > div { display: flex; align-items: baseline; gap: .45rem; }
+.import-report .k {
+  font-size: .64rem; text-transform: uppercase; letter-spacing: .1em;
+  color: var(--fg-faint); min-width: 7.5rem;
+}
+.import-report .v { font-family: var(--mono); }
+
+.marker-grid { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr); gap: .8rem; margin-top: .8rem; }
+.marker-grid > .panel + .panel { margin-top: 0; }
+@media (max-width: 1000px) { .marker-grid { grid-template-columns: 1fr; } }
+
+table.markers { font-size: .8rem; }
+table.markers td { padding: .12rem .25rem; }
+table.markers tr.focus { background: #2a2410; }
+table.markers input[type="text"] { width: 100%; min-width: 5rem; }
+table.markers input.km { width: 5.5rem; text-align: right; }
+table.markers select { padding: .18rem .3rem; font-size: .78rem; }
+table.markers button.danger { padding: .05rem .38rem; line-height: 1.2; }
+
+/* ---------- Fahrer- und Team-Editor (M5b) ---------- */
+input[type="color"] {
+  width: 3rem; height: 1.9rem; padding: 2px;
+  background: var(--bg-panel-2); border: 1px solid var(--line); border-radius: var(--radius);
+}
+input[type="range"] { accent-color: var(--accent); width: 100%; }
+
+.pool-table { max-height: 60vh; overflow-y: auto; }
+.pool-table thead th { position: sticky; top: 0; background: var(--bg-panel); z-index: 1; }
+.pool-table .swatch { display: inline-block; width: .4rem; height: .8rem; border-radius: 1px; margin-right: .35rem; vertical-align: -1px; }
+
+/* Attributgitter: 25 Werte müssen auf einen Blick vergleichbar sein,
+   deshalb feste Spalten statt Fließsatz. */
+.attr-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr)); gap: .35rem .9rem; }
+.attr { padding: .18rem .3rem; border-radius: var(--radius); opacity: .55; }
+.attr.on { opacity: 1; background: var(--bg-panel-2); }
+.attr label { display: flex; flex-direction: column; gap: .1rem; }
+.attr .k { font-size: .68rem; text-transform: uppercase; letter-spacing: .06em; color: var(--fg-dim); }
+.attr .row { display: flex; align-items: center; gap: .4rem; }
+.attr input.val { width: 4rem; text-align: right; padding: .12rem .3rem; font-size: .78rem; }
+
+/* Laufende Regel des Strategiemoduls (Abschnitt 7.2): eigene Farbe, weil
+   eine Entscheidung etwas anderes ist als ein Zustand, der einem
+   widerfährt. */
+.chip.tactic { border-color: var(--accent-2); color: var(--accent-2); }
+
+/* Karriere: Rücktritte und Nachwuchs stehen nebeneinander, weil sie
+   dasselbe Ereignis von zwei Seiten sind. */
+.split { display: grid; grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr)); gap: .9rem; }
+.split h3 { font-size: .72rem; text-transform: uppercase; letter-spacing: .07em;
+            color: var(--fg-dim); margin: 0 0 .35rem; font-weight: 600; }
+ul.plain { list-style: none; margin: 0; padding: 0; }
+ul.plain li { padding: .1rem 0; border-bottom: 1px solid var(--line); }
+ul.plain li:last-child { border-bottom: 0; }
+
+/* Jahresband des Kalenders. Die Frage, die eine Datumsliste nicht
+   beantwortet, ist die nach dem Abstand: Nach einem Ultra braucht das
+   Feld gut drei Wochen. Deshalb liegt hinter jedem Termin sein
+   Erholungsfenster als Balken — überlappt der nächste Punkt damit, ist
+   der Kalender zu eng. */
+.yearband { margin: .2rem 0 .6rem; }
+.yearband .months { display: grid; grid-template-columns: repeat(12, 1fr);
+                    font-size: .62rem; color: var(--fg-faint);
+                    letter-spacing: .1em; margin-bottom: .18rem; }
+.yearband .months span { text-align: center; }
+.yearband .track { position: relative; height: 1.6rem; border-radius: var(--radius);
+                   background: var(--bg-panel-2);
+                   background-image: repeating-linear-gradient(to right,
+                     var(--line) 0 1px, transparent 1px calc(100% / 12));
+                   background-size: calc(100% / 12) 100%; }
+.yearband .recovery { position: absolute; top: .42rem; height: .76rem;
+                      border-radius: 2px; background: #3f8f5a33; border-right: 1px solid #3f8f5a55; }
+.yearband .recovery.mittel { background: #b48a2a33; border-right-color: #b48a2a55; }
+.yearband .recovery.ultra { background: #b0453f33; border-right-color: #b0453f55; }
+.yearband .marker { position: absolute; top: .2rem; width: 3px; height: 1.2rem;
+                    margin-left: -1px; border-radius: 1px; background: var(--fg);
+                    cursor: help; }
+.yearband .marker.tight { background: var(--bad); box-shadow: 0 0 0 2px #f8717a33; }
+
+/* Ereignis-Laufband über der ganzen Breite. Es steht oben, weil ein
+   Ticker das Erste ist, was man beim Einschalten liest — und es zeigt
+   nur zehn Zeilen, weil alles darüber niemand mehr mitliest. */
+.tickerbar { grid-column: 1 / -1; display: flex; align-items: stretch; gap: .5rem;
+             background: var(--bg-panel); border: 1px solid var(--line);
+             border-radius: var(--radius); padding: .3rem .45rem; overflow: hidden; }
+.tickerbar-label { font-size: .62rem; text-transform: uppercase; letter-spacing: .12em;
+                   color: var(--fg-faint); align-self: center; padding-right: .5rem;
+                   border-right: 1px solid var(--line); }
+.tickerbar-items { display: flex; gap: .45rem; overflow-x: auto; scrollbar-width: none;
+                   flex: 1 1 auto; min-width: 0; }
+.tickerbar-items::-webkit-scrollbar { display: none; }
+.tick { display: inline-flex; align-items: baseline; gap: .3rem; white-space: nowrap;
+        font-size: .74rem; padding: .12rem .45rem; border-radius: 999px;
+        border: 1px solid var(--line); color: var(--fg-dim); }
+.tick .t { font-variant-numeric: tabular-nums; color: var(--fg-faint); font-size: .68rem; }
+.tick.focus { border-color: var(--accent); color: var(--fg); }
+.tick.best_time { border-color: var(--good); color: var(--good); }
+.tick.dnf, .tick.incident { border-color: var(--bad); color: var(--bad); }
+.tick.sleep { border-color: var(--accent-2); color: var(--accent-2); }
+.tick.finish { border-color: var(--good); color: var(--fg); }
+.tick.clickable { cursor: pointer; }
+.tick.clickable:hover { border-color: var(--accent); color: var(--fg); }
+
+/* Filterchips des Tickers. Sie stehen rechts und schrumpfen nicht:
+   Wer filtert, muss den Schalter finden, ohne den Ticker wegzuscrollen. */
+.tickerbar-filter { display: flex; gap: .25rem; align-items: center; flex-shrink: 0;
+                    margin-left: auto; padding-left: .5rem;
+                    border-left: 1px solid var(--line); }
+.chipbtn { font-size: .66rem; padding: .1rem .4rem; border-radius: 999px; cursor: pointer;
+           background: transparent; border: 1px solid var(--line); color: var(--fg-faint); }
+.chipbtn:hover { color: var(--fg); }
+.chipbtn.on { border-color: var(--accent); color: var(--fg); }
+.chipbtn.ghost { border-style: dashed; }
+
+/* Rennbericht: eine Zeile Fließtext unter der Ergebniszeile, bewusst
+   ohne eigene Spalte — er gehört zum Fahrer darüber, nicht in eine
+   Tabellenlogik. */
+tr.report td { padding-top: 0; padding-bottom: .35rem; border-top: 0;
+               color: var(--fg-dim); font-size: .78rem; font-style: italic; }
+/* Das Podium bekommt mehr Text und deshalb auch mehr Luft und Kontrast —
+   sonst versinkt der lange Bericht im Kleingedruckten. */
+tr.report.podium td { color: var(--fg); font-size: .82rem; font-style: normal;
+                      padding-bottom: .6rem; max-width: 0; line-height: 1.5;
+                      border-left: 2px solid var(--accent); padding-left: .6rem; }
+
+/* Standzeit: Zahl plus Balken. Der gefüllte Teil ist Notschlaf, der
+   Rest sind Zwischenfälle — dieselbe Zahl, zwei völlig andere Rennen. */
+.stand { display: inline-flex; flex-direction: column; align-items: flex-end; gap: .12rem; }
+/* Dreigeteilt: Notschlaf, Ampeln, Rest = Zwischenfälle (der Untergrund). */
+.standbar { display: block; width: 3rem; height: 3px; border-radius: 2px;
+            background: #6c7a94; overflow: hidden; font-size: 0; }
+.standbar i { display: inline-block; height: 3px; vertical-align: top; }
+.standbar i.sleep { background: var(--accent-2); }
+.standbar i.signal { background: #e0574f; }
+.standkey i { display: inline-block; width: .6rem; height: 3px; border-radius: 2px;
+              margin: 0 .25rem 0 .6rem; vertical-align: middle; }
+
+/* Rangverlauf. Die Linien werden über ``non-scaling-stroke`` gezeichnet,
+   damit sie beim Strecken des viewBox nicht mitverzerren. */
+.rankchart { position: relative; padding: .2rem 0 1.3rem 2.2rem; }
+.rankplot { height: 300px; border-left: 1px solid var(--line);
+            border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+.rankchart svg { width: 100%; height: 100%; display: block; }
+.rankaxis { position: absolute; left: 0; font-size: .66rem; font-family: var(--mono);
+            color: var(--fg-faint); }
+.rankaxis.top { top: .1rem; }
+.rankaxis.bottom { top: 291px; }
+.rankticks { position: relative; height: 1.1rem; }
+.rankticks span { position: absolute; transform: translateX(-50%); white-space: nowrap;
+                  font-size: .66rem; font-family: var(--mono); color: var(--fg-faint);
+                  padding-top: .25rem; }
+.rankchart .grid { stroke: var(--line); stroke-width: 1; vector-effect: non-scaling-stroke; }
+.chartkey { display: flex; flex-wrap: wrap; gap: .1rem .9rem; font-size: .72rem;
+            color: var(--fg-dim); margin-top: .3rem; }
+.chartkey i { display: inline-block; width: .8rem; height: 3px; border-radius: 2px;
+              margin-right: .35rem; vertical-align: middle; }
+.rankchart .rankline { stroke-width: 2; stroke-linejoin: round; stroke-linecap: round;
+                       opacity: .75; transition: opacity .15s ease, stroke-width .15s ease; }
+.rankchart:hover .rankline { opacity: .3; }
+.rankchart .rankline:hover { opacity: 1; stroke-width: 3.5; }
+
+/* Splitmatrix. 250 Fahrer mal 30 Marken passen auf keinen Bildschirm,
+   also scrollt sie waagerecht und hält die Fahrerspalte fest. */
+.matrix-scroll { overflow-x: auto; max-height: 70vh; }
+table.matrix { font-size: .72rem; border-collapse: separate; border-spacing: 0; }
+table.matrix th { position: sticky; top: 0; background: var(--bg-panel); z-index: 2;
+                  white-space: nowrap; }
+table.matrix td.name, table.matrix th.name { position: sticky; left: 0; z-index: 1;
+                  background: var(--bg-panel); white-space: nowrap; }
+table.matrix th.name { z-index: 3; }
+table.matrix td.cell { white-space: nowrap; padding: .1rem .4rem;
+  /* Farbverlauf grün → rot über den Rang. Kein Schwellwert, keine
+     Klassen: Die Zelle rechnet ihre Farbe aus der Zahl. */
+  background: color-mix(in oklab, #2f7a4d calc((1 - var(--shade, 1)) * 100%), #7a2f34); }
+table.matrix td.cell .rk { color: var(--fg); opacity: .55; margin-right: .35rem;
+                           font-size: .66rem; }
+
+/* Warum-Panel: die Form in ihre Faktoren zerlegt. Zugeklappt zeigt es
+   den teuersten Faktor — das ist meistens die ganze Antwort. */
+details.why { margin-top: .5rem; border-top: 1px solid var(--line); padding-top: .4rem; }
+details.why > summary { cursor: pointer; display: flex; justify-content: space-between;
+  gap: .5rem; font-size: .7rem; text-transform: uppercase; letter-spacing: .06em;
+  color: var(--fg-dim); list-style: none; white-space: nowrap; }
+/* Zwei Beschriftungen, eine Zeile: Links steht, worum es geht, rechts
+   der teuerste Faktor. Ohne die Gewichtung kürzt der Browser beide
+   gleichmäßig, und dann steht dort „Warum 10… Langzeitermüdung…" —
+   zwei halbe Wörter statt einer Aussage. */
+details.why > summary > span { overflow: hidden; text-overflow: ellipsis; }
+details.why > summary > span:first-child { flex: 0 0 auto; }
+details.why > summary > span + span { flex: 0 1 auto; min-width: 0; }
+details.why > summary::-webkit-details-marker { display: none; }
+details.why > summary::before { content: "▸ "; color: var(--fg-faint); }
+details.why[open] > summary::before { content: "▾ "; }
+.why-row { display: grid; grid-template-columns: 7.5rem 1fr 2.6rem; align-items: center;
+           gap: .35rem; font-size: .72rem; padding: .06rem 0; }
+.why-row.flat { opacity: .38; }
+.why-row .k { color: var(--fg-dim); }
+.why-row .bar { height: .4rem; background: var(--bg-panel-2); border-radius: 2px;
+                overflow: hidden; }
+.why-row .fill { display: block; height: 100%; }
+.why-row .fill.loss { background: var(--bad); }
+.why-row .fill.gain { background: var(--good); }
+.why-row .v { text-align: right; }
+
+/* ---------------------------------------------------------------------
+   Mini-Flaggen
+   ---------------------------------------------------------------------
+   Gezeichnet statt geladen, und bewusst nicht als Emoji: Windows
+   rendert die Regionalindikatoren (🇩🇪) nicht als Flagge, sondern als
+   zwei Buchstaben — und ausgeliefert wird eine Windows-EXE. Ein
+   Bildersatz wäre die Alternative, aber zwölf Nationen sind mit
+   Farbverläufen billiger zu haben als zwölf Dateien, die in die EXE
+   müssen.
+
+   Zwei davon sind Näherungen. Der Union Jack und die Stars and Stripes
+   lassen sich mit Verläufen nicht ehrlich bauen; bei 15 Pixeln Breite
+   sieht man ohnehin nur die Farbverteilung, und genau die stimmt. */
+.flag {
+  display: inline-block;
+  width: .95rem;
+  height: .65rem;
+  border-radius: 1px;
+  margin-right: .35rem;
+  vertical-align: -1px;
+  background: #444;
+  box-shadow: inset 0 0 0 1px rgb(0 0 0 / .35);
+  flex: none;
+}
+.flag-GER { background: linear-gradient(#000 33.3%, #dd0000 33.3% 66.6%, #ffce00 66.6%); }
+.flag-AUT { background: linear-gradient(#ed2939 33.3%, #fff 33.3% 66.6%, #ed2939 66.6%); }
+.flag-ITA { background: linear-gradient(90deg, #008c45 33.3%, #f4f5f0 33.3% 66.6%, #cd212a 66.6%); }
+.flag-FRA { background: linear-gradient(90deg, #002395 33.3%, #fff 33.3% 66.6%, #ed2939 66.6%); }
+.flag-BEL { background: linear-gradient(90deg, #000 33.3%, #fae042 33.3% 66.6%, #ed2939 66.6%); }
+.flag-NED { background: linear-gradient(#ae1c28 33.3%, #fff 33.3% 66.6%, #21468b 66.6%); }
+.flag-ESP { background: linear-gradient(#aa151b 25%, #f1bf00 25% 75%, #aa151b 75%); }
+.flag-POL { background: linear-gradient(#fff 50%, #dc143c 50%); }
+/* Schweiz und Dänemark: Kreuz aus zwei gekreuzten Verläufen. */
+.flag-SUI {
+  background:
+    linear-gradient(#fff, #fff) 50% 50% / 34% 100% no-repeat,
+    linear-gradient(#fff, #fff) 50% 50% / 100% 34% no-repeat,
+    #d52b1e;
+}
+.flag-DEN {
+  background:
+    linear-gradient(#fff, #fff) 38% 50% / 20% 100% no-repeat,
+    linear-gradient(#fff, #fff) 50% 50% / 100% 22% no-repeat,
+    #c8102e;
+}
+.flag-GBR {
+  background:
+    linear-gradient(#fff, #fff) 50% 50% / 100% 30% no-repeat,
+    linear-gradient(#fff, #fff) 50% 50% / 26% 100% no-repeat,
+    linear-gradient(#c8102e, #c8102e) 50% 50% / 100% 16% no-repeat,
+    linear-gradient(#c8102e, #c8102e) 50% 50% / 13% 100% no-repeat,
+    #012169;
+}
+.flag-USA {
+  background:
+    repeating-linear-gradient(#b31942 0 20%, #fff 20% 40%),
+    #fff;
+  position: relative;
+}
+.flag-USA::before {
+  content: "";
+  position: absolute;
+  inset: 0 60% 45% 0;
+  background: #0a3161;
+}
+
+/* ------------------------------------------------------------------ */
+/* Statistik                                                           */
+/* ------------------------------------------------------------------ */
+/* Die Anstiege einzeln: kurze Tabellen nebeneinander statt einer
+   langen untereinander — jede ist für sich vollständig. */
+.climbgrid { display: grid; gap: .6rem;
+             grid-template-columns: repeat(auto-fill, minmax(34rem, 1fr)); }
+/* 34rem ist die gemessene Breite, ab der nichts mehr abgeschnitten wird:
+   Nummer, Name, Team, Zeit, VAM und Punkte brauchen zusammen rund 520 px.
+   Damit stehen zwei Anstiege nebeneinander statt drei — lieber eine
+   Karte weniger je Zeile als „Sebastian Huf…" in jeder zweiten. */
+.climbcard { background: var(--bg-panel-2); border: 1px solid var(--line);
+             border-radius: var(--radius); padding: .4rem .5rem; }
+/* Etwas kleiner als die Haupttabellen, und ``table-layout: fixed``:
+   Ohne das bestimmt jede Karte ihre Spaltenbreiten aus dem eigenen
+   Inhalt, und zwei Karten nebeneinander haben zwei verschiedene Raster.
+   Mit ihm stehen die Zahlen aller Anstiege in einer Flucht.
+
+   Was doch nicht passt, wird abgeschnitten statt umgebrochen: Eine
+   Zeile je Fahrer ist die ganze Idee der Karte. Der volle Text steht
+   im Titel des Feldes. */
+.climbtable { table-layout: fixed; width: 100%; font-size: .76rem; }
+.climbtable th, .climbtable td {
+  padding: .12rem .3rem;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+/* Die Zahlenspalten bekommen feste Breiten nach ihrem Inhalt, Name und
+   Team teilen sich den Rest. Prozentwerte für alle sechs wären hier
+   falsch: Eine Zeitspalte braucht 82 px, egal wie breit die Karte ist,
+   und jedes Prozent, das sie darüber hinaus bekommt, fehlt dem Team.
+
+   Gemessen an diesem Feld: Nummer 32 px, Zeit 82, VAM 45, Punkte 41 —
+   der längste Fahrername 137, der längste Teamname 180. */
+.climbtable .c-nr { width: 2.2rem; }
+.climbtable .c-time { width: 5.6rem; }
+.climbtable .c-vam { width: 3.1rem; }
+.climbtable .c-pts { width: 2.9rem; }
+/* Auch das Team fest, obwohl es Text ist: Es ist die einzige Spalte,
+   deren längster Wert (180 px) breiter ist als der längste Fahrername
+   (137 px). Teilten sich beide den Rest gleichmäßig, schnitte auf
+   mittelbreiten Bildschirmen immer das Team ab und nie der Name. Der
+   Name bekommt hier den Überschuss — er ist die wichtigere Spalte. */
+.climbtable .c-team { width: 11.6rem; }
+.climbhead { display: flex; align-items: center; gap: .5rem; font-size: .75rem;
+             margin-bottom: .25rem; }
+.badge.cat { border-color: #b0453f; color: #ff8f88; font-family: var(--mono); }
+
+/* Deckungsbalken der Energiebilanz. Der Untergrund ist der Bedarf, der
+   gefüllte Teil das, was nachgekommen ist. */
+.coverbar { display: block; width: 100%; height: 4px; border-radius: 2px;
+            background: #6c7a94; overflow: hidden; }
+.coverbar i { display: block; height: 100%; background: var(--good); }
+
+/* ------------------------------------------------------------------ *
+ * Ergänzungen der schlanken Fassung
+ *
+ * Der Fokusfahrer steht hier in einer Zeile statt in einem Raster aus
+ * zwölf Kacheln: Form, Schlaf, Magen und Aufgabedruck gibt es in dieser
+ * Fassung nicht, und ein Raster aus drei Zahlen und neun Strichen wäre
+ * schlechter als eine gut gesetzte Zeile.
+ * ------------------------------------------------------------------ */
+.focushead { display: flex; align-items: center; gap: .45rem; flex-wrap: wrap;
+             font-size: .82rem; }
+.focushead .fname { font-weight: 600; font-size: .95rem; }
+.swatch.tall { width: .3rem; height: 1.1rem; border-radius: 1px; }
+
+/* Die drei Stammdaten und die Tagesform: kleiner gesetzt als die
+   Live-Werte darüber, weil sie sich im Rennen nicht ändern. */
+.readout.riderdata { padding-top: .45rem; border-top: 1px solid var(--line);
+                     gap: .85rem; }
+.readout.riderdata .v { font-size: .88rem; color: var(--fg-dim); }
+
+/* Wer noch nicht gestartet ist: vorhanden, aber zurückgenommen. */
+.board tr.waiting td { opacity: .45; }
+.chip.wait { border-color: var(--fg-faint); color: var(--fg-faint); }

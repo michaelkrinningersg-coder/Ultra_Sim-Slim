@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}UltraSim Slim{% endblock %}</title>
+  <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/static/css/app.css">
+  {% block head %}{% endblock %}
+</head>
+<body>
+  <div class="topbar">
+    <a class="brand" href="/">ULTRASIM<span class="dim" style="font-weight:400"> SLIM</span></a>
+    <span class="dim">{% block subtitle %}FTP, Gewicht, Größe — mehr braucht ein Rennen nicht{% endblock %}</span>
+    <span class="spacer"></span>
+    {% block topbar %}<a class="faint" href="/">Saisons</a>
+    <a class="faint" href="/fahrer">Fahrer</a>{% endblock %}
+  </div>
+  {% block body %}{% endblock %}
+</body>
+</html>
