@@ -327,6 +327,49 @@ Weil der Wert ein reiner Abzug ist, dauern wellige Strecken im Mittel
 gut ein Prozent länger als vor seiner Einführung. Das ist der Preis der
 Einseitigkeit und bewusst so gewählt.
 
+### Energiegeladen
+
+Das einzige **Ereignis** im Modell — alles andere folgt aus Eigenschaften
+und Gelände. An jeder Zeitmessung kann ein Fahrer mit **1 %**
+Wahrscheinlichkeit einen Schub bekommen, der bis zur **nächsten**
+Messstelle hält: **10 bis 50 Watt auf die FTP**, gleichverteilt gezogen.
+
+Der Gewinn liegt auf der FTP, nicht auf der Tretleistung — er geht also
+denselben Weg wie sie, mal Intensitätsfaktor und Tagesform. Aus 50 W FTP
+werden so rund 33 W am Pedal.
+
+**Die dreißig stärksten Fahrer des Feldes nach relativer FTP kann es
+nicht treffen.** Ein Zufallsgeschenk soll das Rennen aufmischen, nicht
+den Favoriten noch weiter nach vorn tragen.
+
+Über zwanzig Renn-Seeds kommen im Mittel **52 Schübe je Rennen** vor
+(35 bis 66), verteilt auf rund fünfzig verschiedene Fahrer.
+
+Was einer wert ist, hängt daran, wo er anspringt — gemessen an einem
+Fahrer mit 227 W FTP:
+
+| Abschnitt | +10 W | +30 W | +50 W |
+|---|---|---|---|
+| Ostsee, 15 km flach | 29 s | 80 s | 126 s |
+| Karpaten, 8 km mit 5,1 % | 81 s | 215 s | **333 s** |
+| Karpaten, 13,7 km Abfahrt | 4 s | 13 s | 27 s |
+
+Am Berg zählt jedes Watt fast eins zu eins, im Flachen mit der dritten
+Wurzel, und in der Abfahrt fast gar nicht — dort tritt der Fahrer
+ohnehin kaum. Das ist keine Sonderregel, sondern fällt aus der Physik
+heraus.
+
+**Kein neuer veränderlicher Zustand.** Die Auslösung steht in einer
+Tabelle je Fahrer und Messstelle, einmal aus dem Renn-Seed gezogen —
+Würfelwerk wie die Tagesform, und wirksam wird ein Eintrag erst, wenn
+der Fahrer die Messstelle tatsächlich erreicht. Was gerade gilt, hängt
+allein an der Zahl der passierten Messstellen. Damit stimmt der Zustand
+auch nach einem Rücksprung in der Wiedergabe, ohne dass er
+mitgeschrieben werden müsste.
+
+Sichtbar wird der Schub als Chip neben dem Namen (`energiegeladen
++24 W`), als eigene Ticker-Gruppe und als sortierbare Board-Spalte.
+
 Was es **nicht** gibt: W′-Bilanz, Verpflegung, Schlaf, Wetter, Wind,
 Defekte, Stürze, Taktik, Windschatten, Pausen — und keine
 Geschwindigkeitsgrenze in der Abfahrt außer der, die der Abfahrtswert
@@ -568,7 +611,7 @@ Kein Node, kein Build-Schritt. Alpine.js liegt als Datei bei.
 
 ```
 pip install -r requirements-dev.txt
-pytest -q                                   # 234 Tests
+pytest -q                                   # 241 Tests
 python -m ultraslim.app --no-browser        # Server ohne Browser
 ```
 

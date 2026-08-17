@@ -899,3 +899,33 @@ def test_rhythmus_steht_im_bild(token, laufendes_rennen):
         f"/api/playback/{token}/control", json={"action": "sort", "value": "rhythmus"}
     )
     assert laufendes_rennen.get(f"/api/playback/{token}/frame").json()["sort"] == "rhythmus"
+
+
+def test_der_schub_kommt_im_bild_an(token, laufendes_rennen):
+    """Feld in Fokus und Zeile, Meldung im Ticker, Spalte sortierbar."""
+    laufendes_rennen.post(f"/api/playback/{token}/control", json={"action": "seek", "value": 20 * 3600})
+    bild = laufendes_rennen.get(f"/api/playback/{token}/frame").json()
+
+    # Das Feld ist immer da — mit Wert oder mit None.
+    assert "energy_w" in bild["focus"]
+    zeilen = bild["board"]["rows"]
+    assert all("energy_w" in z for z in zeilen)
+    for z in zeilen:
+        assert z["energy_w"] is None or 10 <= z["energy_w"] <= 50
+
+    laufendes_rennen.post(
+        f"/api/playback/{token}/control", json={"action": "sort", "value": "energie"}
+    )
+    assert laufendes_rennen.get(f"/api/playback/{token}/frame").json()["sort"] == "energie"
+
+
+def test_die_schubmeldung_steht_im_ticker(token, laufendes_rennen):
+    laufendes_rennen.post(f"/api/playback/{token}/control", json={"action": "seek", "value": 30 * 3600})
+    bild = laufendes_rennen.get(f"/api/playback/{token}/frame").json()
+    # Der Ticker hält die letzten vierzig Meldungen; über dreißig Stunden
+    # sind reichlich Schübe angesprungen.
+    alle = laufendes_rennen.get(f"/api/playback/{token}/frame").json()["ticker"]
+    assert all(e["t_wall"] <= bild["t_wall"] + 1 for e in alle), "keine Zukunft"
+    energie = [e for e in alle if e["type"] == "ENERGY"]
+    for e in energie:
+        assert "energiegeladen" in e["text"] and " W bis " in e["text"]

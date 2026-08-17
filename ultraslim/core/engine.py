@@ -139,6 +139,22 @@ RHYTHM_REFERENCE = 0.3      # Antritte je Kilometer für Unruhe 1
 #: nichts, bei 0 die volle Spanne — und auf glatter Strecke niemanden.
 RHYTHM_MAX = 0.06
 
+#: „Energiegeladen": An jeder Zeitmessung kann ein Fahrer mit dieser
+#: Wahrscheinlichkeit einen Schub bekommen, der bis zur nächsten
+#: Messstelle hält. Der Gewinn liegt auf der **FTP** — was davon als
+#: Tretleistung ankommt, ist der Intensitätsfaktor mal Tagesform davon,
+#: also gut zwei Drittel.
+#:
+#: Bei einem Prozent, zwanzig Messstellen und 270 möglichen Fahrern sind
+#: das rund fünfzig Ereignisse je Rennen — selten genug, dass es eine
+#: Meldung wert ist, häufig genug, dass es vorkommt.
+ENERGY_EVENT_P = 0.01
+ENERGY_BONUS_W = (10.0, 50.0)
+#: Wen es nicht treffen kann: die stärksten Fahrer des Feldes nach
+#: relativer FTP. Ein Zufallsgeschenk soll das Rennen aufmischen, nicht
+#: den Favoriten noch weiter nach vorn tragen.
+ENERGY_EXCLUDE_TOP = 30
+
 #: Rauschen im Tritt. Zwei langsam wandernde Wellen, deren Summe
 #: höchstens zwei Prozent ausmacht — sichtbar in der Wattanzeige,
 #: praktisch wirkungslos auf die Endzeit.
@@ -449,6 +465,23 @@ class LiveRace:
         self._phi_slow = rng.uniform(0.0, 2.0 * math.pi, n)
         self._phi_fast = rng.uniform(0.0, 2.0 * math.pi, n)
 
+        # „Energiegeladen": eine Tabelle je Fahrer und Messstelle,
+        # einmal aus dem Renn-Seed gezogen. Sie ist **keine**
+        # Vorausberechnung des Rennens — sie ist Würfelwerk wie die
+        # Tagesform, und wirksam wird ein Eintrag erst, wenn der Fahrer
+        # die zugehörige Messstelle tatsächlich erreicht. Der Vorteil
+        # gegenüber einem Würfel im Tick: Der Zustand hängt allein an
+        # der Zahl der passierten Messstellen, und damit stimmt er auch
+        # nach einem Rücksprung in der Wiedergabe.
+        n_splits = len(self.route.splits)
+        treffer = rng.random((n, n_splits)) < ENERGY_EVENT_P
+        hoehe = rng.uniform(*ENERGY_BONUS_W, (n, n_splits))
+        # Die dreißig Stärksten nach Watt je Kilogramm bleiben außen vor.
+        wkg = self.ftp / np.array([r.weight_kg for r in self.riders], dtype=np.float64)
+        stark = np.argsort(-wkg, kind="stable")[:ENERGY_EXCLUDE_TOP]
+        treffer[stark, :] = False
+        self.energy_table = np.where(treffer, hoehe, 0.0)
+
         #: Zielleistung im Flachen, ohne Modulation.
         self.base_power = self.ftp * self.intensity_factor * self.form
 
@@ -601,7 +634,11 @@ class LiveRace:
         profil = profil * start_profile_factor(anteil, self.start_dev)
         profil = profil * finish_kick_factor(anteil, self.kick_norm)
         profil = profil * rhythm_power_factor(terrain.roughness[idx], self.rhythm_norm)
-        power = self.base_power * self.fade_at(t) * terrain.power_factor[idx] * profil * noise
+        # Der Schub liegt auf der FTP, nicht auf der Tretleistung —
+        # deshalb geht er denselben Weg wie sie: mal Intensitätsfaktor,
+        # mal Tagesform.
+        grund = self.base_power + self.energy_bonus_w * self.intensity_factor * self.form
+        power = grund * self.fade_at(t) * terrain.power_factor[idx] * profil * noise
         power *= physics.downhill_power_taper(self.v_ms)
         power = np.where(active, power, 0.0)
 
@@ -669,6 +706,22 @@ class LiveRace:
         rank = int(self._split_seen[split_idx]) + 1
         self._split_seen[split_idx] = rank
         rider = self.riders[rider_idx]
+
+        # Der Schub gilt ab dieser Messstelle bis zur nächsten. Ohne
+        # Meldung wäre er unsichtbar — und ein Ereignis, das niemand
+        # bemerkt, ist keins.
+        bonus = float(self.energy_table[rider_idx, split_idx])
+        if bonus > 0.0:
+            naechste = self.route.splits[min(split_idx + 1, self._n_splits - 1)]
+            self.events.append(
+                RaceEvent(
+                    rider.id,
+                    "ENERGY",
+                    own_s,
+                    t_wall,
+                    f"{rider.name} fährt energiegeladen — +{bonus:.0f} W bis {naechste.name}",
+                )
+            )
 
         # „Führung" heißt beim Einzelstart: die schnellste Zeit, nicht
         # der erste am Messpunkt.
@@ -1002,6 +1055,27 @@ class LiveRace:
         """
         return np.maximum(t_wall - self.start_offset_s, 0.0)
 
+    @property
+    def energy_bonus_w(self) -> np.ndarray:
+        """Der Schub, der gerade gilt — in Watt auf die FTP.
+
+        Er hängt allein daran, wie viele Messstellen ein Fahrer hinter
+        sich hat: Ausgelöst wird an einer Messstelle, und er hält bis
+        zur nächsten. Damit braucht das Ereignis kein Gedächtnis, und
+        ein Rücksprung in der Wiedergabe zeigt denselben Zustand wie
+        beim ersten Durchlauf.
+        """
+        return self._energy_for(self.next_split)
+
+    def energy_at(self, t_wall: float) -> np.ndarray:
+        """Derselbe Schub, aber zur Uhr des Zuschauers."""
+        return self._energy_for(np.count_nonzero(self.reached_mask(t_wall), axis=1))
+
+    def _energy_for(self, passiert: np.ndarray) -> np.ndarray:
+        letzte = np.clip(np.asarray(passiert) - 1, 0, self._n_splits - 1)
+        bonus = self.energy_table[np.arange(len(self.riders)), letzte]
+        return np.where(np.asarray(passiert) >= 1, bonus, 0.0)
+
     def roughness_at(self, dist_m: np.ndarray) -> np.ndarray:
         """Die Unruhe des Geländes an der Stelle jedes Fahrers."""
         idx = np.clip((np.asarray(dist_m) / self.route.step_m).astype(np.int64),
@@ -1049,6 +1123,9 @@ __all__ = [
     "rhythm_power_factor",
     "RHYTHM_MAX",
     "RHYTHM_REFERENCE",
+    "ENERGY_EVENT_P",
+    "ENERGY_BONUS_W",
+    "ENERGY_EXCLUDE_TOP",
     "PROFILE_SPAN",
     "FADE_SPAN_PER_10H",
     "FADE_SPAN_MAX",

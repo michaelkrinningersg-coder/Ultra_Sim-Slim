@@ -29,6 +29,7 @@ const SPEEDS = [1, 5, 10, 30, 60, 300, 1000];
 const TICKER_GROUPS = [
   { key: 'zeit', label: 'Zeiten', types: ['BEST_TIME', 'SPLIT_PASSED'] },
   { key: 'berg', label: 'Berg', types: ['BEST_CLIMB'] },
+  { key: 'energie', label: 'Energie', types: ['ENERGY'] },
   { key: 'start', label: 'Starts', types: ['START'] },
   { key: 'ziel', label: 'Ziel', types: ['FINISH'] },
 ];
@@ -92,6 +93,13 @@ const BOARD_COLUMNS = [
     hint: 'Wie gut der Fahrer mit ständigem Auf und Ab zurechtkommt, 0 bis 100. '
       + 'Bei 100 kostet ihn unruhiges Gelände nichts, bei 0 verliert er dort am '
       + 'meisten; auf glatter Strecke wirkt der Wert bei niemandem.',
+  },
+  {
+    key: 'energie',
+    label: 'Energie',
+    hint: 'Ein Schub, der an einer Zeitmessung anspringen kann und bis zur '
+      + 'nächsten hält: 10 bis 50 Watt auf die FTP. Die dreißig stärksten Fahrer '
+      + 'des Feldes kann er nicht treffen.',
   },
   {
     key: 'verfall',
@@ -398,6 +406,7 @@ function raceLive(raceId) {
         case 'anlauf': return row.start_profile;
         case 'spurt': return row.finish_kick;
         case 'rhythmus': return row.rhythm;
+        case 'energie': return row.energy_w ? `+${row.energy_w} W` : '–';
         default: return '';
       }
     },
@@ -406,6 +415,7 @@ function raceLive(raceId) {
       if (key === 'trend') return row.trend > 0 ? 'pos' : row.trend < 0 ? 'neg' : 'faint';
       if (key === 'vam') return row.vam === null || row.vam === undefined ? 'faint' : '';
       if (key === 'vorrang') return row.prev_rank ? '' : 'faint';
+      if (key === 'energie') return row.energy_w ? 'good' : 'faint';
       if (key === 'verfall') {
         if (row.fade_pct === null || row.fade_pct === undefined) return 'faint';
         const d = row.fade_pct - 100;

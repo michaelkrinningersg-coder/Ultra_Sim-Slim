@@ -10,6 +10,8 @@ from dataclasses import replace
 from ultraslim.core.engine import (
     CLIMB_GRADE_FULL,
     DT,
+    ENERGY_BONUS_W,
+    ENERGY_EXCLUDE_TOP,
     FADE_SPAN_MAX,
     FADE_SPAN_PER_10H,
     FINISH_KICK_MAX,
@@ -757,3 +759,87 @@ def test_der_rhythmus_wirkt_nur_auf_unruhigem_gelaende():
 
     wellig_gut, wellig_schlecht = zeit("wellig", 2500, 100.0), zeit("wellig", 2500, 0.0)
     assert wellig_schlecht > wellig_gut * 1.005, "im Welligen muss es kosten"
+
+
+# ----------------------------------------------------------------------
+# Energiegeladen
+# ----------------------------------------------------------------------
+def grosses_feld(n=60):
+    """Groß genug, dass es neben den dreißig Stärksten noch Fahrer gibt."""
+    teams = [Team(id=0, name="Test–Rad", color="#888888")]
+    riders = [
+        Rider(id=i, bib=i + 1, name=f"Fahrer {i}", nation="GER", team_id=0,
+              ftp_w=200.0 + 3.0 * i, weight_kg=70.0, height_cm=178.0)
+        for i in range(n)
+    ]
+    return teams, riders
+
+
+def test_der_schub_trifft_ungefaehr_ein_prozent():
+    teams, riders = grosses_feld(300)
+    race = LiveRace(kurzstrecke(km=300, hm=1000), riders, teams,
+                    RaceConfig(name="Test", seed=11))
+    tabelle = race.energy_table
+    moeglich = tabelle[ENERGY_EXCLUDE_TOP:].size
+    getroffen = np.count_nonzero(tabelle)
+    assert 0.004 < getroffen / moeglich < 0.02, "rund ein Prozent"
+    werte = tabelle[tabelle > 0]
+    assert werte.min() >= ENERGY_BONUS_W[0] and werte.max() <= ENERGY_BONUS_W[1]
+
+
+def test_die_dreissig_staerksten_bekommen_nichts():
+    teams, riders = grosses_feld(200)
+    race = LiveRace(kurzstrecke(km=300, hm=1000), riders, teams,
+                    RaceConfig(name="Test", seed=3))
+    wkg = np.array([r.w_per_kg for r in riders])
+    stark = np.argsort(-wkg, kind="stable")[:ENERGY_EXCLUDE_TOP]
+    assert np.count_nonzero(race.energy_table[stark]) == 0
+    # Und beim Rest kommt es vor — sonst prüfte der Test nichts.
+    assert np.count_nonzero(race.energy_table) > 0
+
+
+def test_der_schub_gilt_von_einer_messstelle_bis_zur_naechsten():
+    """Er springt an der Messstelle an und ist an der nächsten vorbei."""
+    teams, riders = grosses_feld(80)
+    race = LiveRace(kurzstrecke(km=200, hm=500), riders, teams,
+                    RaceConfig(name="Test", seed=7, start_interval_s=0.0))
+    # Einen Fahrer außerhalb der Sperre gezielt bestücken.
+    race.energy_table[:] = 0.0
+    race.energy_table[0, 2] = 40.0
+
+    while not race.finished:
+        race.advance_to(race.sim_t + 600.0)
+        passiert = int(np.count_nonzero(race.reached_mask(race.sim_t)[0]))
+        bonus = float(race.energy_bonus_w[0])
+        if passiert == 3:
+            assert bonus == pytest.approx(40.0), "ab der dritten Messstelle"
+        elif passiert:
+            assert bonus == 0.0, f"bei {passiert} Messstellen darf nichts gelten"
+
+
+def test_der_schub_macht_schneller_und_bleibt_reproduzierbar():
+    teams, riders = grosses_feld(80)
+
+    def ziel(mit_schub: bool) -> float:
+        race = LiveRace(kurzstrecke(km=200, hm=500), riders, teams,
+                        RaceConfig(name="Test", seed=7, start_interval_s=0.0))
+        race.energy_table[:] = 0.0
+        if mit_schub:
+            race.energy_table[0, 2] = 50.0
+        while not race.finished:
+            race.advance_to(race.sim_t + 3600.0)
+        return float(race.finish_time_s[0])
+
+    assert ziel(True) < ziel(False), "der Schub muss Zeit bringen"
+    assert ziel(True) == ziel(True), "und reproduzierbar sein"
+
+
+def test_der_schub_ueberlebt_den_ruecksprung():
+    """Er hängt an den passierten Messstellen, nicht an der Rechenzeit."""
+    teams, riders = grosses_feld(80)
+    race = LiveRace(kurzstrecke(km=200, hm=500), riders, teams,
+                    RaceConfig(name="Test", seed=7, start_interval_s=0.0))
+    race.advance_to(3600.0)
+    frueh = race.energy_at(1800.0).copy()
+    race.advance_to(4 * 3600.0)
+    assert np.array_equal(race.energy_at(1800.0), frueh)

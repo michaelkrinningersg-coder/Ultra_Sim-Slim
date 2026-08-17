@@ -76,6 +76,12 @@
             <span class="chip" :class="{fin: focus.state===2}" x-text="stateLabel(focus.state)"></span>
             <span class="chip typ" :title="`Kletterprofil ${focus.climb_profile} von 100`"
                   x-text="riderType(focus.climb_profile)"></span>
+            <!-- Der Schub ist ein Zustand, kein Stammwert: Er steht
+                 neben dem Namen, solange er gilt, und verschwindet
+                 danach wieder. -->
+            <span class="chip energy" x-show="focus.energy_w" x-cloak
+                  title="Energiegeladen: Schub auf die FTP bis zur nächsten Zeitmessung"
+                  x-text="`energiegeladen +${focus.energy_w} W`"></span>
           </div>
 
           <!-- Die Uhr: die einzige Zahl, die groß sein muss. Sie steht

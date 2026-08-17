@@ -50,7 +50,7 @@ JUMP_STEP_S = 60.0
 #: Sortierschlüssel, die das Board kennt.
 SORT_FIELDS = frozenset(
     {"zeit", "nr", "name", "team", "rueckstand", "km", "biscp", "trend", "tempo",
-     "leistung", "vam", "vorrang", "verfall", "aero", "profil", "anlauf", "spurt", "rhythmus"}
+     "leistung", "vam", "vorrang", "verfall", "aero", "profil", "anlauf", "spurt", "rhythmus", "energie"}
 )
 
 
@@ -564,6 +564,8 @@ class ViewSession:
         # tritt. Im Ziel bleibt er stehen — die Uhr des Zuschauers läuft
         # weiter, der Fahrer nicht. Wer noch wartet, hat keinen.
         fade = np.where(started, self._verfall(t, finished), np.nan)
+        # Der Schub gilt nur, solange der Fahrer unterwegs ist.
+        energie = np.where(started & ~finished, live.energy_at(t), 0.0)
 
         rows: dict[int, dict] = {}
         for k, rider in enumerate(room.riders):
@@ -595,6 +597,7 @@ class ViewSession:
                 "start_profile": round(rider.start_profile),
                 "finish_kick": round(rider.finish_kick),
                 "rhythm": round(rider.rhythm),
+                "energy_w": None if energie[k] <= 0 else round(float(energie[k])),
                 "power_w": int(round(float(live.power_w[k]))) if started[k] and not finished[k] else 0,
                 "state": (
                     STATE_FINISHED if finished[k] else (STATE_WAITING if waiting else 0)
@@ -801,6 +804,8 @@ class ViewSession:
                 return -row["finish_kick"]
             if key == "rhythmus":
                 return -row["rhythm"]
+            if key == "energie":
+                return -(row["energy_w"] or 0)
             if key == "profil":
                 return -row["climb_profile"]
             if key == "verfall":
@@ -839,6 +844,7 @@ class ViewSession:
         # Was auf seiner Uhr steht — im Ziel die Zielzeit, die steht
         # still, während die Rennuhr weiterläuft.
         own = float(live.finish_time_s[i]) if finished[i] else float(live.own_time(t)[i])
+        schub = float(live.energy_at(t)[i])
 
         # Steckt er in einem Anstieg? Dann zählt, wie weit noch bis oben
         # und wie schnell er steigt — die beiden Zahlen, über die am Berg
@@ -880,6 +886,9 @@ class ViewSession:
             "start_profile": round(rider.start_profile),
             "finish_kick": round(rider.finish_kick),
             "rhythm": round(rider.rhythm),
+            "energy_w": (
+                round(float(schub)) if started[i] and not finished[i] and schub > 0 else None
+            ),
             # Die Unruhe des Geländes an seiner Stelle und was sie ihn
             # gerade kostet — ohne die beiden wäre der Rhythmuswert eine
             # Zahl ohne sichtbare Wirkung.

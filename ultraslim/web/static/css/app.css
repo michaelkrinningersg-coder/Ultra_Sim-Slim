@@ -474,6 +474,7 @@ ul.plain li:last-child { border-bottom: 0; }
 .tick .t { font-variant-numeric: tabular-nums; color: var(--fg-faint); font-size: .68rem; }
 .tick.focus { border-color: var(--accent); color: var(--fg); }
 .tick.best_time { border-color: var(--good); color: var(--good); }
+.tick.energy { border-color: var(--good); color: var(--good); }
 .tick.dnf, .tick.incident { border-color: var(--bad); color: var(--bad); }
 .tick.sleep { border-color: var(--accent-2); color: var(--accent-2); }
 .tick.finish { border-color: var(--good); color: var(--fg); }
@@ -719,6 +720,9 @@ details.why[open] > summary::before { content: "▾ "; }
 /* Der Fahrertyp gehört in die Kopfzeile, nicht ins Zahlenraster: Er ist
    eine Einordnung, keine Messgröße. */
 .chip.typ { border-color: var(--accent-2); color: var(--accent-2); }
+/* Der Schub leuchtet, solange er gilt — er ist das einzige Ereignis in
+   dieser Fassung, das einem einzelnen Fahrer etwas schenkt. */
+.chip.energy { border-color: var(--good); color: var(--good); background: rgba(74,222,128,.08); }
 
 /* Wer noch nicht gestartet ist: vorhanden, aber zurückgenommen. */
 .board tr.waiting td { opacity: .45; }
