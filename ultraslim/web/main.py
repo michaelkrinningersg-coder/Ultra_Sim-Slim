@@ -556,6 +556,8 @@ def create_app(data_dir: str | Path = "data") -> FastAPI:
                     "endurance": round(r.endurance),
                     "aero": round(r.aero),
                     "climb_profile": round(r.climb_profile),
+                    "start_profile": round(r.start_profile),
+                    "finish_kick": round(r.finish_kick),
                     "start_offset_s": round(float(offsets[k]), 1),
                 }
                 for k, r in enumerate(room.riders)

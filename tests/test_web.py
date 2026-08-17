@@ -857,3 +857,26 @@ def test_aero_und_profil_stehen_im_bild(token, laufendes_rennen):
         )
         assert antwort.status_code == 200
         assert laufendes_rennen.get(f"/api/playback/{token}/frame").json()["sort"] == schluessel
+
+
+def test_startprofil_und_spurt_stehen_im_bild(token, laufendes_rennen):
+    bild = laufendes_rennen.get(f"/api/playback/{token}/frame").json()
+    fokus = bild["focus"]
+    assert 0 <= fokus["start_profile"] <= 100
+    assert 0 <= fokus["finish_kick"] <= 100
+    # Die Fläche im Fokus ist die gerechnete, also mit Aerowert.
+    assert 0.18 < fokus["area_m2"] < 0.36
+
+    zeile = bild["board"]["rows"][0]
+    assert 0 <= zeile["start_profile"] <= 100
+    assert 0 <= zeile["finish_kick"] <= 100
+
+    eintrag = laufendes_rennen.get(f"/api/race/{RACE_ID}/startlist").json()["entries"][0]
+    assert 0 <= eintrag["start_profile"] <= 100
+    assert 0 <= eintrag["finish_kick"] <= 100
+
+    for schluessel in ("anlauf", "spurt"):
+        laufendes_rennen.post(
+            f"/api/playback/{token}/control", json={"action": "sort", "value": schluessel}
+        )
+        assert laufendes_rennen.get(f"/api/playback/{token}/frame").json()["sort"] == schluessel

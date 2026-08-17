@@ -50,7 +50,7 @@ JUMP_STEP_S = 60.0
 #: Sortierschlüssel, die das Board kennt.
 SORT_FIELDS = frozenset(
     {"zeit", "nr", "name", "team", "rueckstand", "km", "biscp", "trend", "tempo",
-     "leistung", "vam", "vorrang", "verfall", "aero", "profil"}
+     "leistung", "vam", "vorrang", "verfall", "aero", "profil", "anlauf", "spurt"}
 )
 
 
@@ -592,6 +592,8 @@ class ViewSession:
                 "fade_pct": None if np.isnan(fade[k]) else round(float(fade[k]) * 100.0, 1),
                 "aero": round(rider.aero),
                 "climb_profile": round(rider.climb_profile),
+                "start_profile": round(rider.start_profile),
+                "finish_kick": round(rider.finish_kick),
                 "power_w": int(round(float(live.power_w[k]))) if started[k] and not finished[k] else 0,
                 "state": (
                     STATE_FINISHED if finished[k] else (STATE_WAITING if waiting else 0)
@@ -792,6 +794,10 @@ class ViewSession:
                 return -row["power_w"]
             if key == "aero":
                 return -row["aero"]
+            if key == "anlauf":
+                return -row["start_profile"]
+            if key == "spurt":
+                return -row["finish_kick"]
             if key == "profil":
                 return -row["climb_profile"]
             if key == "verfall":
@@ -868,6 +874,11 @@ class ViewSession:
             "endurance": round(rider.endurance),
             "aero": round(rider.aero),
             "climb_profile": round(rider.climb_profile),
+            "start_profile": round(rider.start_profile),
+            "finish_kick": round(rider.finish_kick),
+            # Die Fläche **mit** Aerowert — sonst stünde im Fokus eine
+            # Zahl, die von der gerechneten abweicht.
+            "area_m2": round(float(live.area[i]), 3),
             # Der Verfall in Prozent der Startleistung: 103 heißt drei
             # Prozent über dem, womit er losgerollt ist. Gerechnet aus
             # seiner Eigenzeit — im Ziel also aus der Zielzeit.

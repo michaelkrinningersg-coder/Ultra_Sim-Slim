@@ -1,10 +1,11 @@
 # UltraSim Slim
 
 Ultracycling-Simulator, schlanke Fassung. Ein Fahrer hat genau drei
-körperliche Eigenschaften — **FTP, Gewicht, Größe** — und vier Zahlen von
-0 bis 100, die sagen, was er damit anfängt: **Abfahrt**, **Ausdauer**,
-**Aerodynamik** und das **Kletterprofil**. Eine Strecke ist ein
-zweidimensionales Höhenprofil, und alles andere folgt aus der Physik.
+körperliche Eigenschaften — **FTP, Gewicht, Größe** — und sechs Zahlen
+von 0 bis 100, die sagen, was er damit anfängt: **Abfahrt**,
+**Ausdauer**, **Aerodynamik**, **Kletterprofil**, **Startprofil** und
+**Endspurt**. Eine Strecke ist ein zweidimensionales Höhenprofil, und
+alles andere folgt aus der Physik.
 
 Ein Rennen wird **nie vorberechnet**. Die Engine ist ein angehaltener
 Generator, der genau so weit gezogen wird, wie die Uhr des Zuschauers
@@ -75,7 +76,7 @@ Fahrer vierzehn Prozent Zusatzmasse, beim schweren achteinhalb.
 
 ### Pacing
 
-Zielleistung = `FTP · IF · Tagesform · Verfall · Steigungsfaktor · Profil · Trittrauschen`.
+Zielleistung = `FTP · IF · Tagesform · Verfall · Steigungsfaktor · Profil · Startprofil · Endspurt · Trittrauschen`.
 
 - **IF** folgt der Renndistanz: 0,72 bei 300 km, 0,70 bei 400, 0,66 bei
   600, 0,64 bei 700, 0,62 bei 850, 0,60 bei 1000 km.
@@ -91,7 +92,7 @@ Zielleistung = `FTP · IF · Tagesform · Verfall · Steigungsfaktor · Profil �
 
 ### Der Abfahrtswert
 
-Die erste der vier Zahlen, die nicht aus dem Körper folgen. **Bei 100 rollt er ungebremst aus, bei 0 nimmt er die
+Die erste der sechs Zahlen, die nicht aus dem Körper folgen. **Bei 100 rollt er ungebremst aus, bei 0 nimmt er die
 volle Drosselung mit** — höchstens **15 %** Tempo, hinterlegt als
 `DESCENT_THROTTLE_MAX` in `core/physics.py`.
 
@@ -213,6 +214,60 @@ und Ausdauer ist der Wert also **nicht** von selbst zeitneutral: Die
 Empfindlichkeit von Leistung auf Zeit ist am Berg mehr als doppelt so
 hoch wie im Flachen. Das ist Absicht, nicht Nachlässigkeit — der Zweck
 des Werts ist, dass die Strecke entscheidet.
+
+### Startprofil und Endspurt
+
+Die vier Werte davor sagen, **wo** ein Fahrer stark ist. Diese beiden
+sagen, **wann** — und sie sind die ersten, die den Verlauf eines Rennens
+verändern, ohne die Endzeit zu bestimmen.
+
+**Startprofil**, symmetrisch um 50, Bezugsgröße ist der Streckenanteil:
+
+```
+Startprofil = 1 + START_PROFILE_SPAN · (Start/100 − 0,5) · (1 − 2 · Anteil)
+```
+
+Bei 100 rollt der Fahrer mit der halben Spanne über seiner Zielleistung
+los und liegt am Ziel ebenso weit darunter, bei 0 umgekehrt; bei der
+Hälfte der Strecke kreuzen sich beide. Über die Distanz gemittelt hebt
+sich der Faktor exakt auf. `START_PROFILE_SPAN = 0,08`.
+
+Der Streckenanteil ist bewusst gewählt: Er ist exakt bekannt, ohne
+irgendetwas über die Restdauer annehmen zu müssen — für eine Engine, die
+nichts vorberechnet, ist das der Unterschied zwischen einer Zahl und
+einer Vermutung.
+
+Gemessen, Schnellstarter (100) gegen Diesel (0):
+
+| Strecke | bei ¼ | bei ½ | im Ziel |
+|---|---|---|---|
+| Ostsee 300 km | 3,3 min | 4,4 min | **0,1 min** |
+| Karpaten 700 km | 14,7 min | 19,6 min | **0,2 min** |
+| Alpen 1000 km | 30,1 min | 40,9 min | **3,2 min** |
+
+Genau das war die Absicht: Die Zwischenwertung steht auf dem Kopf, das
+Ergebnis nicht. Die drei Minuten auf dem Alpenmarathon sind der Rest,
+den die Umverteilung übrig lässt, weil dort die zweite Hälfte anderes
+Gelände hat als die erste — über die Distanz ist der Faktor neutral,
+über die *Zeit* nicht ganz.
+
+**Endspurt**, als einziger Wert einseitig — 0 heißt wirklich null:
+
+```
+Rampe    = clip((Anteil − 0,80) / 0,20, 0, 1)
+Endspurt = 1 + FINISH_KICK_MAX · (Spurt/100) · Rampe
+```
+
+Er greift erst auf dem letzten Fünftel der Distanz und ist erst auf der
+Ziellinie voll da. `FINISH_KICK_MAX = 0,10`. Vor km 240 einer
+300-km-Strecke ist er nachweislich wirkungslos — die Zwischenzeiten bei
+¼ und ½ sind auf die Hundertstelminute identisch.
+
+| Strecke | Spurt 100 gegen 0 |
+|---|---|
+| Ostsee 300 km | 2,1 min |
+| Karpaten 700 km | 8,2 min |
+| Alpen 1000 km | 14,9 min |
 
 Was es **nicht** gibt: W′-Bilanz, Verpflegung, Schlaf, Wetter, Wind,
 Defekte, Stürze, Taktik, Windschatten, Pausen — und keine
@@ -455,7 +510,7 @@ Kein Node, kein Build-Schritt. Alpine.js liegt als Datei bei.
 
 ```
 pip install -r requirements-dev.txt
-pytest -q                                   # 223 Tests
+pytest -q                                   # 229 Tests
 python -m ultraslim.app --no-browser        # Server ohne Browser
 ```
 

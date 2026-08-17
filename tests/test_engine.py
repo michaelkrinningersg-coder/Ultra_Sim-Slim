@@ -12,7 +12,10 @@ from ultraslim.core.engine import (
     DT,
     FADE_SPAN_MAX,
     FADE_SPAN_PER_10H,
+    FINISH_KICK_MAX,
+    FINISH_KICK_START,
     PROFILE_SPAN,
+    START_PROFILE_SPAN,
     STATE_RIDING,
     STATE_WAITING,
     TICKS_PER_YIELD,
@@ -20,9 +23,11 @@ from ultraslim.core.engine import (
     RaceConfig,
     climb_ramp,
     endurance_fade,
+    finish_kick_factor,
     grade_power_factor,
-    profile_power_factor,
     intensity_for_distance,
+    profile_power_factor,
+    start_profile_factor,
 )
 from ultraslim.core import physics
 from ultraslim.core.rider import Rider, Team, generate_pool
@@ -631,3 +636,65 @@ def test_die_strecke_entscheidet_zwischen_kletterer_und_rouleur():
     kletterer_berg, rouleur_berg = ergebnis["hochgebirge"]
     assert kletterer_flach > rouleur_flach, "im Flachen gewinnt der Rouleur"
     assert kletterer_berg < rouleur_berg, "im Hochgebirge der Kletterer"
+
+
+def test_das_startprofil_verschiebt_ueber_die_distanz():
+    """Vorn hoch, hinten runter — und in der Mitte kreuzen sie sich."""
+    anteile = np.array([0.0, 0.5, 1.0])
+    schnell = start_profile_factor(anteile, 0.5)
+    diesel = start_profile_factor(anteile, -0.5)
+
+    assert schnell[0] > 1.0 > schnell[2], "der Schnellstarter beginnt oben"
+    assert diesel[0] < 1.0 < diesel[2], "der Diesel endet oben"
+    assert schnell[1] == pytest.approx(1.0) and diesel[1] == pytest.approx(1.0)
+    assert schnell[0] - diesel[0] == pytest.approx(START_PROFILE_SPAN)
+    assert schnell[0] - 1.0 == pytest.approx(1.0 - schnell[2]), "symmetrisch um die Mitte"
+
+    # Über die Distanz gemittelt hebt es sich auf — der Wert verschiebt,
+    # er verschenkt nicht.
+    fein = np.linspace(0.0, 1.0, 1001)
+    assert start_profile_factor(fein, 0.5).mean() == pytest.approx(1.0, abs=1e-6)
+    # Und die Mitte der Skala merkt nichts davon.
+    assert start_profile_factor(fein, 0.0) == pytest.approx(np.ones(1001))
+
+
+def test_der_endspurt_greift_erst_am_schluss():
+    """Vor dem letzten Fünftel passiert nichts, danach wächst er."""
+    anteile = np.array([0.0, 0.5, FINISH_KICK_START, 0.9, 1.0])
+    voll = finish_kick_factor(anteile, 1.0)
+    assert voll[0] == pytest.approx(1.0)
+    assert voll[1] == pytest.approx(1.0)
+    assert voll[2] == pytest.approx(1.0), "genau an der Grenze noch nichts"
+    assert voll[3] == pytest.approx(1.0 + FINISH_KICK_MAX / 2), "auf halber Rampe die Hälfte"
+    assert voll[4] == pytest.approx(1.0 + FINISH_KICK_MAX)
+
+    # Einseitig: Null heißt hier wirklich null, nicht „Mitte".
+    assert finish_kick_factor(anteile, 0.0) == pytest.approx(np.ones(5))
+    assert finish_kick_factor(np.array([1.0]), 0.5)[0] == pytest.approx(1.0 + FINISH_KICK_MAX / 2)
+
+
+def test_startprofil_und_endspurt_im_rennen():
+    """Zwischenzeit gegen Endzeit — genau daran hängt der Unterschied."""
+    teams, riders = kleines_feld(1)
+    route = kurzstrecke("wellig", km=200, hm=1500)
+
+    def fahre(**werte):
+        fahrer = replace(riders[0], **werte)
+        race = LiveRace(route, [fahrer], teams,
+                        RaceConfig(name="Test", seed=5, start_interval_s=0.0))
+        while not race.finished:
+            race.advance_to(race.sim_t + 3600.0)
+        mitte = len(route.splits) // 2 - 1
+        return float(race.split_times[0, mitte]), float(race.finish_time_s[0])
+
+    schnell_halb, schnell_ziel = fahre(start_profile=100.0, finish_kick=0.0)
+    diesel_halb, diesel_ziel = fahre(start_profile=0.0, finish_kick=0.0)
+
+    assert schnell_halb < diesel_halb - 60, "zur Hälfte muss der Schnellstarter vorn sein"
+    # Am Ziel bleibt fast nichts davon übrig: Der Wert verschiebt nur.
+    assert abs(schnell_ziel - diesel_ziel) < 0.02 * schnell_ziel
+
+    ohne_halb, ohne_ziel = fahre(start_profile=50.0, finish_kick=0.0)
+    mit_halb, mit_ziel = fahre(start_profile=50.0, finish_kick=100.0)
+    assert mit_halb == pytest.approx(ohne_halb), "vorher darf er nichts tun"
+    assert mit_ziel < ohne_ziel, "am Ziel schon"

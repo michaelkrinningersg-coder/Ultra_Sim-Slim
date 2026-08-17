@@ -35,7 +35,10 @@
       sagen, <em>wo</em> ein Fahrer stark ist: <strong>Aero</strong> — wie
       sauber er auf dem Rad liegt, spürbar vor allem im Flachen — und das
       <strong>Profil</strong>, das den Kletterer (100) vom Rouleur (0)
-      trennt und überwiegend dem Gewicht folgt.
+      trennt und überwiegend dem Gewicht folgt. Zwei weitere sagen,
+      <em>wann</em> er stark ist: <strong>Start</strong> — 100 rollt schnell
+      los und baut ab, 0 kommt spät in Fahrt — und der <strong>Spurt</strong>
+      über das letzte Fünftel der Distanz, bei dem 0 wirklich null bedeutet.
     </p>
     <table class="board">
       <thead>
@@ -44,6 +47,7 @@
             <th class="right">W/kg</th><th class="right">Abfahrt</th>
             <th class="right">Ausdauer</th>
             <th class="right">Aero</th><th class="right">Profil</th>
+            <th class="right">Start</th><th class="right">Spurt</th>
             <th class="right">A<sub>frontal</sub></th></tr>
       </thead>
       <tbody>
@@ -63,6 +67,8 @@
           <td class="right mono">{{ r.endurance|round|int }}</td>
           <td class="right mono">{{ r.aero|round|int }}</td>
           <td class="right mono">{{ r.climb_profile|round|int }}</td>
+          <td class="right mono">{{ r.start_profile|round|int }}</td>
+          <td class="right mono">{{ r.finish_kick|round|int }}</td>
           <td class="right mono faint">{{ '%.3f'|format(r.frontal_area_m2) }} m²</td>
         </tr>
         {% endfor %}

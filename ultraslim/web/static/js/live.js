@@ -75,6 +75,18 @@ const BOARD_COLUMNS = [
       + 'spart im Flachen, der Rouleur umgekehrt. Folgt überwiegend dem Gewicht.',
   },
   {
+    key: 'anlauf',
+    label: 'Start',
+    hint: 'Startprofil, 0 bis 100, 50 ist gleichmäßig. Bei 100 rollt der Fahrer '
+      + 'schnell los und baut ab, bei 0 kommt er spät in Fahrt.',
+  },
+  {
+    key: 'spurt',
+    label: 'Spurt',
+    hint: 'Endspurt, 0 bis 100. Er greift erst auf dem letzten Fünftel der '
+      + 'Distanz und wird zum Ziel hin stärker; 0 heißt kein Endspurt.',
+  },
+  {
     key: 'verfall',
     label: 'Verfall',
     hint: 'Was der Ausdauerwert bis jetzt gemacht hat: Abweichung von der '
@@ -376,6 +388,8 @@ function raceLive(raceId) {
         case 'verfall': return fadeText(row.fade_pct);
         case 'aero': return row.aero;
         case 'profil': return row.climb_profile;
+        case 'anlauf': return row.start_profile;
+        case 'spurt': return row.finish_kick;
         default: return '';
       }
     },

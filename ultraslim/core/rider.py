@@ -1,10 +1,10 @@
 """Fahrer, Teams und der Generator für den Pool.
 
 Ein Fahrer hat in dieser Fassung genau drei körperliche Eigenschaften:
-**FTP, Gewicht, Größe**. Was er damit anfängt, sagen vier Zahlen von 0
-bis 100: **Abfahrt**, **Ausdauer**, **Aerodynamik** und das
-**Kletterprofil**. Alles andere — Magen, Schlaf, Charakter — ist
-bewusst nicht da.
+**FTP, Gewicht, Größe**. Was er damit anfängt, sagen sechs Zahlen von 0
+bis 100: **Abfahrt**, **Ausdauer**, **Aerodynamik**, **Kletterprofil**,
+**Startprofil** und **Endspurt**. Alles andere — Magen, Schlaf,
+Charakter — ist bewusst nicht da.
 """
 
 from __future__ import annotations
@@ -85,6 +85,10 @@ AERO_BETA = 2.0
 CLIMB_PROFILE_WEIGHT_SHARE = 0.6
 CLIMB_PROFILE_BETA = 2.0
 
+#: Startprofil und Endspurt, wieder dieselbe Glocke.
+START_PROFILE_BETA = 2.0
+FINISH_KICK_BETA = 2.0
+
 
 @dataclass(frozen=True)
 class Team:
@@ -125,6 +129,16 @@ class Rider:
     #: Der Wert folgt überwiegend dem Gewicht — Rouleure sind eher
     #: schwere Fahrer.
     climb_profile: float = 50.0
+    #: Wie er sein Rennen über die Distanz einteilt, 0 bis 100. Bei 100
+    #: rollt er schnell los und baut ab, bei 0 kommt er spät in Fahrt
+    #: und wird stärker. Der Wert **verschiebt** nur — über die volle
+    #: Distanz gleicht er sich aus; 50 fährt gleichmäßig.
+    start_profile: float = 50.0
+    #: Endspurt, 0 bis 100. Anders als die übrigen Werte ist er
+    #: einseitig: 0 heißt kein Endspurt, 100 der stärkste. Er greift
+    #: erst auf dem letzten Fünftel der Distanz und wird zum Ziel hin
+    #: stärker.
+    finish_kick: float = 0.0
 
     # ------------------------------------------------------------------
     @property
@@ -157,6 +171,19 @@ class Rider:
         return float(np.clip(self.climb_profile / 100.0, 0.0, 1.0)) - 0.5
 
     @property
+    def start_profile_dev(self) -> float:
+        """Das Startprofil als Abweichung von der Mitte.
+
+        Positiv ist der Schnellstarter, negativ der Diesel.
+        """
+        return float(np.clip(self.start_profile / 100.0, 0.0, 1.0)) - 0.5
+
+    @property
+    def finish_kick_norm(self) -> float:
+        """Der Endspurt auf 0 bis 1 — hier ist null wirklich null."""
+        return float(np.clip(self.finish_kick / 100.0, 0.0, 1.0))
+
+    @property
     def frontal_area_m2(self) -> float:
         return float(physics.frontal_area(self.height_cm, self.weight_kg))
 
@@ -183,6 +210,8 @@ class Rider:
             "endurance": round(self.endurance, 1),
             "aero": round(self.aero, 1),
             "climb_profile": round(self.climb_profile, 1),
+            "start_profile": round(self.start_profile, 1),
+            "finish_kick": round(self.finish_kick, 1),
         }
 
 
@@ -273,9 +302,13 @@ def generate_pool(seed: int = 20260101) -> tuple[list[Team], list[Rider]]:
         + (1.0 - CLIMB_PROFILE_WEIGHT_SHARE) * wuerfel
     )
 
+    anlauf = rng.beta(START_PROFILE_BETA, START_PROFILE_BETA, n) * 100.0
+    spurt = rng.beta(FINISH_KICK_BETA, FINISH_KICK_BETA, n) * 100.0
+
     riders = [
-        replace(r, endurance=float(e), aero=float(a), climb_profile=float(p))
-        for r, e, a, p in zip(riders, ausdauer, aero, profil)
+        replace(r, endurance=float(e), aero=float(a), climb_profile=float(p),
+                start_profile=float(sp), finish_kick=float(fk))
+        for r, e, a, p, sp, fk in zip(riders, ausdauer, aero, profil, anlauf, spurt)
     ]
     return teams, riders
 
@@ -312,4 +345,6 @@ __all__ = [
     "AERO_BETA",
     "CLIMB_PROFILE_BETA",
     "CLIMB_PROFILE_WEIGHT_SHARE",
+    "START_PROFILE_BETA",
+    "FINISH_KICK_BETA",
 ]

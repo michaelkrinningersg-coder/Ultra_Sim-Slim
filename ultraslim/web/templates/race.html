@@ -122,8 +122,9 @@
             </div>
           </template>
 
-          <!-- Stammdaten: kleiner gesetzt, weil sie sich im Rennen nicht
-               ändern. Neun Zellen, drei volle Zeilen — kein Rest. -->
+          <!-- Zwei Gruppen zu je sechs Zellen: erst der Körper, dann
+               der Charakter. Beide füllen genau zwei Zeilen — kein
+               Rest, keine halb besetzte Reihe. -->
           <div class="statgrid riderdata">
             <div class="cell"><span class="k">FTP<span class="u">W</span></span>
               <span class="v" x-text="focus.ftp_w"></span></div>
@@ -136,6 +137,12 @@
             <div class="cell"><span class="k" title="Zufallsfaktor auf die FTP, einmal je Rennen gezogen">Tagesform<span class="u">%</span></span>
               <span class="v" x-text="focus.form_pct"></span></div>
             <div class="cell"><span class="k"
+                  title="Frontalfläche aus Größe und Gewicht, mit dem Aerowert verrechnet — die Fläche, mit der die Physik rechnet.">Fläche<span class="u">m²</span></span>
+              <span class="v" x-text="focus.area_m2.toFixed(3)"></span></div>
+
+            <div class="sep"></div>
+
+            <div class="cell"><span class="k"
                   title="0 bis 100. Bei 100 rollt er bergab ungebremst aus, bei 0 nimmt er die volle Drosselung mit.">Abfahrt</span>
               <span class="v" x-text="focus.descent_skill"></span></div>
             <div class="cell"><span class="k"
@@ -147,6 +154,12 @@
             <div class="cell"><span class="k"
                   title="Kletterer (100) oder Rouleur (0). Der Kletterer drückt am Anstieg und spart im Flachen, der Rouleur umgekehrt.">Profil</span>
               <span class="v" x-text="focus.climb_profile"></span></div>
+            <div class="cell"><span class="k"
+                  title="Startprofil: Bei 100 rollt er schnell los und baut ab, bei 0 kommt er spät in Fahrt. 50 fährt gleichmäßig.">Start</span>
+              <span class="v" x-text="focus.start_profile"></span></div>
+            <div class="cell"><span class="k"
+                  title="Endspurt über das letzte Fünftel der Distanz. 0 heißt kein Endspurt, 100 der stärkste.">Spurt</span>
+              <span class="v" x-text="focus.finish_kick"></span></div>
           </div>
         </div>
       </template>

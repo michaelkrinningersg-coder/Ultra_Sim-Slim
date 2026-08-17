@@ -176,3 +176,30 @@ def test_rouleure_sind_die_schweren_kletterer_die_leichten():
     # Den leichten Rouleur muss es weiterhin geben.
     leichte_haelfte = profil[gewicht < np.median(gewicht)]
     assert (leichte_haelfte < 40.0).any(), "sonst wäre der Wert nur das Gewicht"
+
+
+def test_startprofil_und_endspurt_sind_gezogen():
+    _, riders = generate_pool()
+    anlauf = np.array([r.start_profile for r in riders])
+    spurt = np.array([r.finish_kick for r in riders])
+
+    for werte in (anlauf, spurt):
+        assert werte.min() >= 0.0 and werte.max() <= 100.0
+        assert werte.mean() == pytest.approx(50.0, abs=3.5)
+        assert werte.std() > 19.0
+
+    # Das Startprofil ist um fünfzig zentriert, der Endspurt ist
+    # einseitig — dort heißt null wirklich null.
+    assert riders[0].start_profile_dev == pytest.approx(riders[0].start_profile / 100 - 0.5)
+    assert riders[0].finish_kick_norm == pytest.approx(riders[0].finish_kick / 100)
+
+
+def test_die_beiden_neuen_werte_haben_das_feld_nicht_ausgetauscht():
+    """Wieder ganz am Ende gezogen — alles davor bleibt, wie es war."""
+    _, riders = generate_pool()
+    assert riders[0].name == "Oliver Kingsley"
+    assert riders[0].ftp_w == pytest.approx(227.4, abs=0.1)
+    assert riders[0].descent_skill == pytest.approx(69.4, abs=0.1)
+    assert riders[0].endurance == pytest.approx(47.9, abs=0.1)
+    assert riders[0].aero == pytest.approx(17.0, abs=0.1)
+    assert riders[0].climb_profile == pytest.approx(76.3, abs=0.1)

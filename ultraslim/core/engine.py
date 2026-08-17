@@ -98,6 +98,24 @@ FADE_REFERENCE_S = 10.0 * 3600.0
 #: gewinnt.
 PROFILE_SPAN = 0.08
 
+#: Spanne des Startprofils zwischen Schnellstarter und Diesel, je Ende
+#: der Distanz. Der Schnellstarter rollt mit der halben Spanne über
+#: seiner Zielleistung los und liegt am Ziel ebenso weit darunter, der
+#: Diesel umgekehrt.
+#:
+#: Bezugsgröße ist der **Streckenanteil**, nicht die Zeit: Er ist exakt
+#: bekannt, ohne irgendetwas über die Restdauer annehmen zu müssen. Über
+#: die Distanz gemittelt hebt sich der Faktor auf — der Wert verschiebt,
+#: wo im Rennen ein Fahrer stark ist, nicht wie stark er insgesamt ist.
+START_PROFILE_SPAN = 0.08
+
+#: Endspurt. Anders als alles andere einseitig: Bei 0 passiert nichts,
+#: bei 100 tritt der Fahrer am Ziel ``FINISH_KICK_MAX`` über seiner
+#: Zielleistung. Er blendet über das letzte Fünftel der Distanz linear
+#: ein und ist erst auf der Ziellinie voll da.
+FINISH_KICK_START = 0.80
+FINISH_KICK_MAX = 0.10
+
 #: Rauschen im Tritt. Zwei langsam wandernde Wellen, deren Summe
 #: höchstens zwei Prozent ausmacht — sichtbar in der Wattanzeige,
 #: praktisch wirkungslos auf die Endzeit.
@@ -216,6 +234,30 @@ def grade_power_factor(grade: np.ndarray) -> np.ndarray:
     return 1.0 + CLIMB_POWER_GAIN * climb_ramp(g) - DESCENT_POWER_LOSS * down
 
 
+def start_profile_factor(share: np.ndarray, start_dev: np.ndarray) -> np.ndarray:
+    """Wie das Startprofil die Leistung über die Distanz verteilt.
+
+    ``share`` ist der gefahrene Anteil der Strecke, 0 bis 1. Der
+    Schnellstarter (``start_dev`` positiv) beginnt oben und endet unten,
+    der Diesel umgekehrt; bei der Hälfte kreuzen sich beide. Bei null
+    kommt überall 1,0 heraus.
+    """
+    s = np.clip(np.asarray(share, dtype=np.float64), 0.0, 1.0)
+    return 1.0 + START_PROFILE_SPAN * np.asarray(start_dev, dtype=np.float64) * (1.0 - 2.0 * s)
+
+
+def finish_kick_factor(share: np.ndarray, kick_norm: np.ndarray) -> np.ndarray:
+    """Der Endspurt über das letzte Fünftel der Distanz.
+
+    ``kick_norm`` ist der Endspurtwert auf 0 bis 1. Vor
+    ``FINISH_KICK_START`` ist der Faktor genau 1,0, danach läuft er
+    linear auf ``1 + FINISH_KICK_MAX · kick_norm`` an der Ziellinie zu.
+    """
+    s = np.clip(np.asarray(share, dtype=np.float64), 0.0, 1.0)
+    rampe = np.clip((s - FINISH_KICK_START) / (1.0 - FINISH_KICK_START), 0.0, 1.0)
+    return 1.0 + FINISH_KICK_MAX * np.asarray(kick_norm, dtype=np.float64) * rampe
+
+
 def profile_power_factor(ramp: np.ndarray, profile_dev: np.ndarray) -> np.ndarray:
     """Wie das Kletterprofil die Leistung zwischen Berg und Flach verschiebt.
 
@@ -329,6 +371,10 @@ class LiveRace:
         #: Ebenso das Kletterprofil: positiv der Kletterer, negativ der
         #: Rouleur.
         self.profile_dev = np.array([r.climb_profile_dev for r in self.riders], dtype=np.float64)
+        #: Das Startprofil: positiv der Schnellstarter, negativ der Diesel.
+        self.start_dev = np.array([r.start_profile_dev for r in self.riders], dtype=np.float64)
+        #: Der Endspurt, 0 bis 1.
+        self.kick_norm = np.array([r.finish_kick_norm for r in self.riders], dtype=np.float64)
 
         intensity = self.config.intensity_factor
         if intensity is None:
@@ -487,8 +533,13 @@ class LiveRace:
         # seit einer Stunde fährt, ist eine Stunde alt, auch wenn die
         # Übertragung seit dreißig läuft.
         # Das Kletterprofil verschiebt dieselbe Leistung zwischen Berg
-        # und Flach — es kommt keine dazu.
+        # und Flach — es kommt keine dazu. Das Startprofil tut dasselbe
+        # zwischen Anfang und Ende der Strecke; nur der Endspurt legt
+        # wirklich etwas drauf, dafür erst auf dem letzten Fünftel.
+        anteil = self.dist_m / self.route.distance_m
         profil = profile_power_factor(terrain.climb_ramp[idx], self.profile_dev)
+        profil = profil * start_profile_factor(anteil, self.start_dev)
+        profil = profil * finish_kick_factor(anteil, self.kick_norm)
         power = self.base_power * self.fade_at(t) * terrain.power_factor[idx] * profil * noise
         power *= physics.downhill_power_taper(self.v_ms)
         power = np.where(active, power, 0.0)
@@ -817,6 +868,14 @@ class LiveRace:
             # Zeitstrahl soll aber auch keinen von beiden abschneiden.
             profil = profile_power_factor(terrain.climb_ramp, -0.5)
             profil = np.minimum(profil, profile_power_factor(terrain.climb_ramp, 0.5))
+            # Und beim Startprofil ebenso das jeweils langsamere Ende:
+            # vorn der Diesel, hinten der Schnellstarter. Der Endspurt
+            # bleibt außen vor — er macht nur schneller, und eine zu
+            # lange Schätzung schadet nicht.
+            anteil = (np.arange(len(terrain.grade)) + 0.5) / len(terrain.grade)
+            profil = profil * np.minimum(
+                start_profile_factor(anteil, -0.5), start_profile_factor(anteil, 0.5)
+            )
             # Ebenso die schlechteste Position im Feld statt der des
             # schwächsten Fahrers.
             v = physics.steady_state_speed(
@@ -909,6 +968,10 @@ __all__ = [
     "endurance_fade",
     "climb_ramp",
     "profile_power_factor",
+    "start_profile_factor",
+    "finish_kick_factor",
+    "START_PROFILE_SPAN",
+    "FINISH_KICK_MAX",
     "PROFILE_SPAN",
     "FADE_SPAN_PER_10H",
     "FADE_SPAN_MAX",
