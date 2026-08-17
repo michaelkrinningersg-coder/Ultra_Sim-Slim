@@ -32,6 +32,12 @@ HEIGHT_RANGE = (163.0, 195.0)
 #: im Radsport nicht.
 BMI_MEAN = 21.5
 BMI_SD = 1.2
+#: Der BMI wird **vor** dem Gewicht begrenzt. Ohne das schlug der
+#: Gewichtsdeckel unten durch: Ein 180-cm-Fahrer mit einem sehr tiefen
+#: Zug landete bei 55 kg und damit bei einem BMI von 16,9 — den gibt es
+#: im Radsport nicht. Der Deckel auf dem Gewicht bleibt trotzdem, er
+#: fängt nur noch die Ränder ab.
+BMI_RANGE = (18.5, 25.0)
 WEIGHT_RANGE = (55.0, 88.0)
 
 #: Relative FTP in Watt je Kilogramm Körpergewicht.
@@ -43,6 +49,21 @@ WKG_RANGE = (3.30, 5.60)
 #: fünfundzwanzig Teams statistisch nicht unterscheidbar und die
 #: Teamwertung eine Zufallszahl.
 TEAM_OFFSET_SPAN = 0.35
+
+#: Form der Verteilung des Abfahrtswerts: eine Beta-Verteilung mit
+#: gleichen Parametern, auf 0 bis 100 gestreckt.
+#:
+#: Warum nicht die Normalverteilung: Sie ist unbegrenzt und müsste an
+#: beiden Enden abgeschnitten werden — dann sammelt sich Masse genau auf
+#: 0 und 100, also ausgerechnet dort, wo sie am wenigsten hingehört. Die
+#: Beta-Verteilung läuft an den Rändern von selbst auf null aus und
+#: braucht keinen Schnitt.
+#:
+#: ``2,0`` ergibt eine liegende Parabel um 50 mit einer Streuung von
+#: 22,4 Punkten — mittig, aber spürbar breiter als eine gewöhnliche
+#: Glockenkurve. Größere Werte machen die Kurve schmaler, kleinere
+#: flacher; bei 1,0 wäre sie gleichverteilt.
+DESCENT_BETA = 2.0
 
 
 @dataclass(frozen=True)
@@ -65,8 +86,17 @@ class Rider:
     ftp_w: float
     weight_kg: float
     height_cm: float
+    #: Wie beherzt er bergab fährt, 0 bis 100. Die einzige Eigenschaft,
+    #: die nicht aus der Physik folgt — bei 100 rollt er ungebremst aus,
+    #: bei 0 nimmt er die maximale Drosselung mit.
+    descent_skill: float = 100.0
 
     # ------------------------------------------------------------------
+    @property
+    def descent_norm(self) -> float:
+        """Der Abfahrtswert auf 0 bis 1, wie ihn die Physik erwartet."""
+        return float(np.clip(self.descent_skill / 100.0, 0.0, 1.0))
+
     @property
     def frontal_area_m2(self) -> float:
         return float(physics.frontal_area(self.height_cm, self.weight_kg))
@@ -90,6 +120,7 @@ class Rider:
             "ftp_w": round(self.ftp_w, 1),
             "weight_kg": round(self.weight_kg, 1),
             "height_cm": round(self.height_cm, 1),
+            "descent_skill": round(self.descent_skill, 1),
         }
 
 
@@ -139,9 +170,10 @@ def generate_pool(seed: int = 20260101) -> tuple[list[Team], list[Rider]]:
             name = _draw_name(rng, nation, used_names)
 
             height = float(np.clip(rng.normal(HEIGHT_MEAN, HEIGHT_SD), *HEIGHT_RANGE))
-            bmi = float(rng.normal(BMI_MEAN, BMI_SD))
+            bmi = float(np.clip(rng.normal(BMI_MEAN, BMI_SD), *BMI_RANGE))
             weight = float(np.clip(bmi * (height / 100.0) ** 2, *WEIGHT_RANGE))
             wkg = float(np.clip(rng.normal(WKG_MEAN, WKG_SD) + offsets[team.id], *WKG_RANGE))
+            abfahrt = float(rng.beta(DESCENT_BETA, DESCENT_BETA) * 100.0)
 
             riders.append(
                 Rider(
@@ -153,6 +185,7 @@ def generate_pool(seed: int = 20260101) -> tuple[list[Team], list[Rider]]:
                     ftp_w=wkg * weight,
                     weight_kg=weight,
                     height_cm=height,
+                    descent_skill=abfahrt,
                 )
             )
             rid += 1
@@ -186,4 +219,5 @@ __all__ = [
     "FIELD_SIZE",
     "N_TEAMS",
     "RIDERS_PER_TEAM",
+    "DESCENT_BETA",
 ]

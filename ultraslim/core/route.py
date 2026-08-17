@@ -80,15 +80,26 @@ CLIMB_CATEGORIES: tuple[tuple[float, str], ...] = (
 #: Unter dieser Höhe taucht ein Anstieg gar nicht erst im Profil auf.
 CLIMB_MIN_ASCENT_M = 150.0
 
-#: Ab dieser Kategorie kommt der Gipfel für eine eigene Zeitmessung in
-#: Frage — höchstens ``MAX_SUMMIT_SPLITS`` davon, die höchsten zuerst.
-#: Ohne Deckel hat die Alpenrunde dreiundzwanzig Zeitmessungen, und die
-#: Auswahlliste im Board wird zur Bleiwüste.
-SUMMIT_SPLIT_CATEGORIES = frozenset({"HC", "1. Kat."})
-MAX_SUMMIT_SPLITS = 5
+#: Ab dieser Kategorie bekommt der Gipfel eine eigene Zeitmessung. Ein
+#: Hügel vierter Kategorie ist kein markanter Punkt; ein Pass zweiter
+#: aufwärts schon.
+SUMMIT_SPLIT_CATEGORIES = frozenset({"HC", "1. Kat.", "2. Kat."})
 
-#: Ungefähre Zahl der Kontrollpunkte, Ziel nicht mitgezählt.
-N_CONTROL_POINTS = 8
+#: Kontrollpunkte auf einem festen Raster der Renndistanz — alle fünf
+#: Prozent, also neunzehn Stück plus Ziel.
+CONTROL_POINT_FRACTION = 0.05
+
+#: Liegt ein Gipfel näher als das an einem Rasterpunkt, entfällt der
+#: Rasterpunkt. Zwei Zeitmessungen zwei Kilometer auseinander messen
+#: dasselbe zweimal, und der Gipfel ist die interessantere von beiden.
+#:
+#: Bewusst ein absoluter Wert und kein Anteil der Distanz: Bei tausend
+#: Kilometern wären anderthalb Prozent fünfzehn Kilometer, und mit
+#: achtzehn Gipfeln fiele damit fast das ganze Raster weg — zwischen
+#: zwei Zeitmessungen lägen dann fünfundsechzig Kilometer. Für kurze
+#: Strecken greift stattdessen der Rasterabstand als Schranke.
+SUMMIT_MERGE_M = 2000.0
+SUMMIT_MERGE_MAX_SHARE = 0.4
 
 
 @dataclass(frozen=True)
@@ -359,19 +370,40 @@ def _categorise(ascent_m: float) -> str | None:
 
 
 def _build_splits(distance_m: float, climbs: list[Climb]) -> list[Split]:
-    """Kontrollpunkte in gleichen Abständen, dazu große Gipfel und Ziel."""
-    marks: list[tuple[float, str, str]] = []
-    spacing = distance_m / (N_CONTROL_POINTS + 1)
-    for k in range(1, N_CONTROL_POINTS + 1):
-        marks.append((spacing * k, f"KP {k}", "interval"))
-    big = [c for c in climbs if c.category in SUMMIT_SPLIT_CATEGORIES]
-    big.sort(key=lambda c: c.ascent_m, reverse=True)
-    for climb in big[:MAX_SUMMIT_SPLITS]:
-        marks.append((climb.dist_end_m, f"Gipfel km {climb.dist_end_m / 1000:.0f}", "summit"))
-    marks.append((distance_m, "Ziel", "finish"))
+    """Zeitmessungen: alle fünf Prozent, dazu jeder markante Gipfel.
 
+    Die Gipfel gehen vor. Wo einer nah an einem Rasterpunkt liegt,
+    entfällt der Rasterpunkt — er würde dasselbe ein zweites Mal messen,
+    und von beiden ist der Gipfel die Stelle, über die geredet wird.
+    """
+    marks: list[tuple[float, str, str]] = [
+        (c.dist_end_m, f"Gipfel km {c.dist_end_m / 1000:.0f}", "summit")
+        for c in climbs
+        if c.category in SUMMIT_SPLIT_CATEGORIES and c.dist_end_m < distance_m
+    ]
+
+    raster = distance_m * CONTROL_POINT_FRACTION
+    naehe = min(SUMMIT_MERGE_M, raster * SUMMIT_MERGE_MAX_SHARE)
+    anteil = CONTROL_POINT_FRACTION
+    while anteil < 1.0 - 1e-9:
+        dist = distance_m * anteil
+        if not any(abs(dist - m[0]) < naehe for m in marks):
+            marks.append((dist, "", "interval"))
+        anteil += CONTROL_POINT_FRACTION
+
+    marks.append((distance_m, "Ziel", "finish"))
     marks.sort(key=lambda m: m[0])
-    return [Split(idx=i, name=name, dist_m=dist, kind=kind) for i, (dist, name, kind) in enumerate(marks)]
+
+    # Erst nach dem Sortieren nummerieren, damit „KP 3" auch der dritte
+    # auf der Strecke ist und nicht der dritte in der Einfügereihenfolge.
+    splits: list[Split] = []
+    lfd = 0
+    for i, (dist, name, kind) in enumerate(marks):
+        if kind == "interval":
+            lfd += 1
+            name = f"KP {lfd}"
+        splits.append(Split(idx=i, name=name, dist_m=dist, kind=kind))
+    return splits
 
 
 def generate_route(

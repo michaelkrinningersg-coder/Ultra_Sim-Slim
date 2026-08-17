@@ -46,6 +46,13 @@ for (const group of TICKER_GROUPS) for (const t of group.types) GROUP_OF_TYPE.se
 const BOARD_COLUMNS = [
   { key: 'km', label: 'km', hint: 'gefahrene Kilometer' },
   { key: 'biscp', label: 'bis CP', hint: 'Meter bis zur nächsten Zeitmessung' },
+  {
+    key: 'vorrang',
+    label: 'Rg −1',
+    hint: 'Platzierung bei der vorherigen Zeitmessung. In der Splitwertung die '
+      + 'Messstelle vor der gewählten; sonst die letzte, die der Fahrer selbst '
+      + 'passiert hat.',
+  },
   { key: 'trend', label: '±', hint: 'Plätze gewonnen oder verloren seit der Zeitmessung davor' },
   { key: 'tempo', label: 'km/h', hint: 'Momentangeschwindigkeit' },
   { key: 'leistung', label: 'W', hint: 'Tretleistung' },
@@ -58,7 +65,7 @@ const BOARD_COLUMNS = [
 ];
 
 //: Was ohne eigene Wahl steht.
-const DEFAULT_COLUMNS = ['km', 'biscp'];
+const DEFAULT_COLUMNS = ['km', 'biscp', 'vorrang'];
 
 function hms(seconds) {
   if (seconds === null || seconds === undefined) return '—';
@@ -222,11 +229,14 @@ function raceLive(raceId) {
       const delta = this.sortDelta;
       const zeit = (r) =>
         r.t_s === null ? Infinity : r.t_s + (r.running ? delta : 0);
+      const sortiert = raw.slice().sort((a, b) => zeit(a) - zeit(b));
+      // In der Splitwertung gehört die Rangziffer zur gemessenen Zeit
+      // und nicht zur Zeile: Sie wandert nicht mit, wenn eine laufende
+      // Uhr an einem Gemessenen vorbeizieht. In der Bergwertung ist der
+      // Rang die Position — dort wird weitergereicht.
+      if (this.isSplitMode) return sortiert;
       const raenge = raw.map((r) => r.rank).sort((a, b) => a - b);
-      return raw
-        .slice()
-        .sort((a, b) => zeit(a) - zeit(b))
-        .map((r, i) => (r.rank === raenge[i] ? r : { ...r, rank: raenge[i] }));
+      return sortiert.map((r, i) => (r.rank === raenge[i] ? r : { ...r, rank: raenge[i] }));
     },
     get pinnedRows() { return this.board && this.board.pinned ? this.board.pinned : []; },
     //: Der Abstand zwischen den beiden angehefteten Fahrern — das
@@ -328,6 +338,7 @@ function raceLive(raceId) {
       switch (key) {
         case 'km': return this.rowDist(row).toFixed(1);
         case 'biscp': return this.toNext(row);
+        case 'vorrang': return row.prev_rank || '–';
         case 'trend':
           return row.trend > 0 ? `▲${row.trend}` : row.trend < 0 ? `▼${-row.trend}` : '–';
         case 'tempo': return row.v_kmh.toFixed(1);
@@ -340,6 +351,7 @@ function raceLive(raceId) {
     cellClass(key, row) {
       if (key === 'trend') return row.trend > 0 ? 'pos' : row.trend < 0 ? 'neg' : 'faint';
       if (key === 'vam') return row.vam === null || row.vam === undefined ? 'faint' : '';
+      if (key === 'vorrang') return row.prev_rank ? '' : 'faint';
       return '';
     },
 

@@ -198,6 +198,8 @@ class _Terrain:
     rho: np.ndarray
     position_k: np.ndarray
     power_factor: np.ndarray
+    #: Wie stark die Bremse hier greifen darf — null bis eins.
+    brake_ramp: np.ndarray
 
     @classmethod
     def build(cls, route: Route) -> _Terrain:
@@ -213,6 +215,7 @@ class _Terrain:
             rho=physics.air_density(mid_ele),
             position_k=physics.position_k(grade),
             power_factor=grade_power_factor(grade),
+            brake_ramp=physics.brake_ramp(grade),
         )
 
 
@@ -241,6 +244,13 @@ class LiveRace:
         self.ftp = np.array([r.ftp_w for r in self.riders], dtype=np.float64)
         self.mass = np.array([r.system_mass_kg for r in self.riders], dtype=np.float64)
         self.area = np.array([r.frontal_area_m2 for r in self.riders], dtype=np.float64)
+
+        #: Der Abfahrtswert, schon in die Form gebracht, die der Tick
+        #: braucht: ``f = 1 − brems_coeff · Rampe``. Bei Wert 100 ist der
+        #: Beiwert null, und die Bremse ist damit wirkungslos — ohne
+        #: Sonderfall, ohne Verzweigung.
+        self.descent_norm = np.array([r.descent_norm for r in self.riders], dtype=np.float64)
+        self._brake_coeff = physics.DESCENT_THROTTLE_MAX * (1.0 - self.descent_norm)
 
         intensity = self.config.intensity_factor
         if intensity is None:
@@ -399,7 +409,12 @@ class LiveRace:
         power *= physics.downhill_power_taper(self.v_ms)
         power = np.where(active, power, 0.0)
 
-        cda = self.area * terrain.position_k[idx]
+        # Bremsen in der Abfahrt: ein Zuschlag auf den Widerstand, kein
+        # Abzug von der Leistung. Ab acht Prozent Gefälle tritt der
+        # Fahrer im größten Gang leer — die Watt sind dort schon null,
+        # und was null ist, kann man nicht kleiner machen.
+        f_brems = 1.0 - self._brake_coeff * terrain.brake_ramp[idx]
+        cda = self.area * terrain.position_k[idx] / (f_brems * f_brems)
         crr = physics.rolling_crr(self.v_ms)
 
         v_new = physics.integrate_step(
@@ -703,11 +718,16 @@ class LiveRace:
         if not hasattr(self, "_duration_cache"):
             weakest = int(np.argmin(self.base_power / self.mass))
             terrain = self._terrain
+            # Mit der stärksten Bremse gerechnet, nicht mit der des
+            # schwächsten Fahrers: Der Zeitstrahl darf zu lang sein,
+            # aber nie zu kurz — sonst hielte die Wiedergabe vor dem
+            # letzten Zieleinlauf an.
+            f_brems = physics.descent_speed_factor(terrain.brake_ramp, 0.0)
             v = physics.steady_state_speed(
                 self.base_power[weakest] * terrain.power_factor,
                 terrain.grade,
                 self.mass[weakest],
-                self.area[weakest] * terrain.position_k,
+                self.area[weakest] * terrain.position_k / (f_brems * f_brems),
                 physics.CRR_ASPHALT,
                 terrain.rho,
             )

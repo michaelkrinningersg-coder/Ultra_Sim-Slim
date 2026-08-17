@@ -49,7 +49,7 @@ JUMP_STEP_S = 60.0
 #: Sortierschlüssel, die das Board kennt.
 SORT_FIELDS = frozenset(
     {"zeit", "nr", "name", "team", "rueckstand", "km", "biscp", "trend", "tempo",
-     "leistung", "vam"}
+     "leistung", "vam", "vorrang"}
 )
 
 
@@ -389,6 +389,8 @@ class ViewSession:
 
         rows_all = self._build_rows(t, dist, v, started, finished, reached)
         order = self._sorted_order(rows_all)
+        if self.mode == "split":
+            self._nur_gemessene_raenge(rows_all, reached)
 
         focus_i = self._focus_index()
         if self.split_follow and self.mode == "split":
@@ -396,10 +398,20 @@ class ViewSession:
         if self.climb_follow and self.mode == "climb":
             self._follow_climb(dist)
 
-        pos_in_order = {entry: k for k, entry in enumerate(order)}
-        centre = pos_in_order.get(room.riders[focus_i].id, 0)
-        lo = max(0, centre - BOARD_WINDOW // 2)
-        window = order[lo : lo + BOARD_WINDOW]
+        if self.mode == "split":
+            # Die Zwischenwertung ist eine Ergebnisliste, kein Ausschnitt:
+            # Wer die Messstelle passiert hat, steht darin — und wer sie
+            # noch vor sich hat, aber die davor schon hinter sich, mit
+            # seiner laufenden Uhr dazwischen. Ein Fenster um den Fokus
+            # würde genau die Fahrer verstecken, deretwegen man auf eine
+            # Zwischenwertung schaut.
+            drin = {rows_all[e]["entry_id"] for e in order if rows_all[e]["t_s"] is not None}
+            window = [e for e in order if e in drin]
+        else:
+            pos_in_order = {entry: k for k, entry in enumerate(order)}
+            centre = pos_in_order.get(room.riders[focus_i].id, 0)
+            lo = max(0, centre - BOARD_WINDOW // 2)
+            window = order[lo : lo + BOARD_WINDOW]
 
         if self.mode == "split":
             durch = reached[:, self.split_idx]
@@ -527,6 +539,7 @@ class ViewSession:
             gaps = times - best
 
         trend = self._trend(reached)
+        vorrang = self._vorheriger_rang(reached)
 
         next_idx = np.clip(np.count_nonzero(reached, axis=1), 0, n_splits - 1)
         split_dist = np.array([s.dist_m for s in route.splits])
@@ -567,6 +580,7 @@ class ViewSession:
                 "to_next_m": None if np.isnan(to_next[k]) else int(max(to_next[k], 0)),
                 "next_split": route.splits[int(next_idx[k])].name,
                 "trend": int(trend[k]),
+                "prev_rank": int(vorrang[k]) or None,
                 "v_kmh": round(float(v[k]) * 3.6, 1),
                 "vam": None if np.isnan(vam[k]) else int(round(float(vam[k]))),
                 "power_w": int(round(float(live.power_w[k]))) if started[k] and not finished[k] else 0,
@@ -648,6 +662,63 @@ class ViewSession:
         gefahren = np.maximum(dist, 1.0)
         return np.where(dist >= ziel_m, own, own * (ziel_m / gefahren))
 
+    def _split_ranks(self, reached, col: int) -> np.ndarray:
+        """Platzierung an einer Zeitmessung, 1-basiert; 0 heißt „nicht durch".
+
+        Gewertet wird nur, wer sie erreicht hat — wer noch unterwegs ist,
+        hat dort keine Platzierung, und ihm eine zu geben hieße, die
+        Rangliste um Fahrer zu ergänzen, die gar nicht in ihr stehen.
+        """
+        n = len(self.room.riders)
+        out = np.zeros(n, dtype=np.int32)
+        durch = reached[:, col]
+        if not durch.any():
+            return out
+        zeiten = np.where(durch, self.room.live.split_times[:, col], np.inf)
+        out[np.argsort(zeiten, kind="stable")] = np.arange(1, n + 1)
+        out[~durch] = 0
+        return out
+
+    def _nur_gemessene_raenge(self, rows: dict[int, dict], reached) -> None:
+        """In der Splitwertung trägt nur eine Nummer, wer durch ist.
+
+        Der Rang an einer Zeitmessung gehört zur gefahrenen Zeit, nicht
+        zur Zeile: Wer die Messstelle noch vor sich hat, reiht sich mit
+        seiner laufenden Uhr weiter live ein — an seiner Stelle steht
+        aber ein Strich und keine Platzziffer. Damit zählt die Spalte
+        genau die Fahrer durch, die gemessen wurden (1, 2, –, 3), und
+        eine Rangnummer wechselt nicht mehr den Besitzer, nur weil eine
+        fremde Uhr weiterläuft.
+        """
+        raenge = self._split_ranks(reached, self.split_idx)
+        for k, rider in enumerate(self.room.riders):
+            rows[rider.id]["rank"] = int(raenge[k]) or None
+
+    def _vorheriger_rang(self, reached) -> np.ndarray:
+        """Wie der Fahrer bei der Zeitmessung davor platziert war.
+
+        In der Splitwertung ist das die Messstelle **vor der gewählten** —
+        damit steht in einer Spalte eine Rangliste, die für alle dieselbe
+        ist, und die Trendspalte daneben ist genau die Differenz.
+
+        In den anderen Wertungen gibt es keine gewählte Messstelle. Dort
+        zählt die **letzte, die der Fahrer selbst passiert hat** — für
+        jeden eine andere, aber für jeden die Antwort auf „wie stand er
+        beim letzten Kontrollpunkt".
+        """
+        n = len(self.room.riders)
+        if self.mode == "split":
+            s = self.split_idx
+            return self._split_ranks(reached, s - 1) if s >= 1 else np.zeros(n, dtype=np.int32)
+
+        durch = np.count_nonzero(reached, axis=1)
+        out = np.zeros(n, dtype=np.int32)
+        for col in range(reached.shape[1]):
+            betroffen = durch == col + 1
+            if betroffen.any():
+                out[betroffen] = self._split_ranks(reached, col)[betroffen]
+        return out
+
     def _trend(self, reached) -> np.ndarray:
         """Plätze gegenüber dem vorletzten erreichten Split.
 
@@ -703,6 +774,9 @@ class ViewSession:
                 # Ohne Anstieg keine Steiggeschwindigkeit — die stehen
                 # hinten, nicht mit einer erfundenen Null vorn.
                 return -(row["vam"] if row["vam"] is not None else -1)
+            if key == "vorrang":
+                # Wer noch keine Zeitmessung hinter sich hat, steht hinten.
+                return row["prev_rank"] if row["prev_rank"] is not None else 10**6
             # 'zeit': die Wertung selbst. Rein nach der Zeit, ohne
             # gemessene und laufende zu trennen — genau darum kann eine
             # laufende Uhr einen Fahrer nach hinten schieben.
@@ -761,6 +835,7 @@ class ViewSession:
             "weight_kg": round(rider.weight_kg, 1),
             "height_cm": round(rider.height_cm),
             "w_per_kg": round(rider.w_per_kg, 2),
+            "descent_skill": round(rider.descent_skill),
             "dist_m": round(float(dist[i]), 1),
             "remaining_m": round(max(room.route.distance_m - float(dist[i]), 0.0), 1),
             "v_kmh": round(float(v[i]) * 3.6, 1),

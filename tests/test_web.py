@@ -215,6 +215,28 @@ def test_board_zeigt_einen_ausschnitt_um_den_fokus(token, laufendes_rennen):
     assert bild["board"]["leader"] is not None
 
 
+def _messstelle_mit_laufenden_uhren(client, token, t_wall: float) -> int:
+    """Sucht eine Messstelle, vor der zum Zeitpunkt t_wall noch gefahren wird.
+
+    Der Splitraster hängt an der Strecke (alle 5 % plus Bergspitzen), die
+    Zahl der Messstellen darf sich also ändern, ohne dass die Tests darunter
+    brechen: Gesucht wird die erste Stelle, an der überhaupt laufende Uhren
+    im Ausschnitt stehen.
+    """
+    steuern = lambda a, v: client.post(  # noqa: E731
+        f"/api/playback/{token}/control", json={"action": a, "value": v}
+    )
+    steuern("mode", "split")
+    steuern("split_follow", False)
+    steuern("seek", t_wall)
+    for idx in range(40):
+        steuern("split", idx)
+        bild = client.get(f"/api/playback/{token}/frame").json()
+        if any(z["running"] for z in bild["board"]["rows"]):
+            return idx
+    raise AssertionError("Testaufbau: keine Messstelle mit laufenden Uhren gefunden")
+
+
 def test_splitwertung_zeigt_die_laufende_uhr(token, laufendes_rennen):
     """Wer die Messstelle noch vor sich hat, steht mit seiner Uhr da.
 
@@ -222,10 +244,7 @@ def test_splitwertung_zeigt_die_laufende_uhr(token, laufendes_rennen):
     weiter, und der Fahrer wandert nach unten, sobald sie eine gefahrene
     Zeit überholt.
     """
-    laufendes_rennen.post(f"/api/playback/{token}/control", json={"action": "seek", "value": 8 * 3600})
-    laufendes_rennen.post(f"/api/playback/{token}/control", json={"action": "mode", "value": "split"})
-    laufendes_rennen.post(f"/api/playback/{token}/control", json={"action": "split_follow", "value": False})
-    laufendes_rennen.post(f"/api/playback/{token}/control", json={"action": "split", "value": 4})
+    _messstelle_mit_laufenden_uhren(laufendes_rennen, token, 8 * 3600)
     bild = laufendes_rennen.get(f"/api/playback/{token}/frame").json()
 
     unterwegs = [r for r in bild["board"]["rows"] if r["running"]]
@@ -234,7 +253,9 @@ def test_splitwertung_zeigt_die_laufende_uhr(token, laufendes_rennen):
         assert zeile["provisional"] is True, "laufende Uhren stehen kursiv"
         # Die Uhr eines Fahrers, der noch fährt, ist seine Eigenzeit —
         # und damit höchstens die Rennuhr.
-        assert 0 < zeile["t_s"] <= bild["t_wall"] + 1
+        # Wer eben erst losgerollt ist, steht mit null da — das ist die
+        # Uhr, nicht ihr Fehlen.
+        assert 0 <= zeile["t_s"] <= bild["t_wall"] + 1
         assert zeile["to_next_m"] is not None and zeile["to_next_m"] > 0
 
     # Eine laufende Uhr darf unter der Bestzeit liegen: Der Fahrer hat
@@ -249,9 +270,8 @@ def test_laufende_uhr_waechst_mit_der_rennuhr(token, laufendes_rennen):
     steuern = lambda a, v: laufendes_rennen.post(  # noqa: E731
         f"/api/playback/{token}/control", json={"action": a, "value": v}
     )
-    steuern("mode", "split")
-    steuern("split_follow", False)
-    steuern("split", 6)
+    messstelle = _messstelle_mit_laufenden_uhren(laufendes_rennen, token, 9 * 3600)
+    steuern("split", messstelle)
 
     steuern("seek", 9 * 3600)
     frueh = laufendes_rennen.get(f"/api/playback/{token}/frame").json()
@@ -268,6 +288,81 @@ def test_laufende_uhr_waechst_mit_der_rennuhr(token, laufendes_rennen):
         assert spaeter["dist_km"] > vorher["dist_km"]
         getestet += 1
     assert getestet > 0, "es muss vergleichbare Zeilen geben"
+
+
+def test_zwischenwertung_zeigt_das_ganze_gewertete_feld(token, laufendes_rennen):
+    """Kein Ausschnitt: Wer durch ist, steht in der Liste.
+
+    In der virtuellen Rangliste ist ein Fenster um den Fokusfahrer
+    richtig — dort schaut man auf eine Momentaufnahme. Die
+    Zwischenwertung ist eine Ergebnisliste; sie hört nicht bei vierzig
+    Zeilen auf.
+    """
+    steuern = lambda a, v: laufendes_rennen.post(  # noqa: E731
+        f"/api/playback/{token}/control", json={"action": a, "value": v}
+    )
+    steuern("mode", "split")
+    steuern("split_follow", False)
+    steuern("seek", 24 * 3600)
+    steuern("split", 3)
+    bild = laufendes_rennen.get(f"/api/playback/{token}/frame").json()
+
+    zeilen = bild["board"]["rows"]
+    assert bild["board"]["n_reached"] > 40, "Testaufbau: mehr als ein Fenster voll"
+    gemessen = [z for z in zeilen if not z["provisional"]]
+    assert len(gemessen) == bild["board"]["n_reached"]
+    assert all(z["t_s"] is not None for z in zeilen), "wer keine Uhr hat, steht nicht drin"
+
+    # Die virtuelle Rangliste bleibt beim Ausschnitt.
+    steuern("mode", "virtual")
+    virtuell = laufendes_rennen.get(f"/api/playback/{token}/frame").json()
+    assert len(virtuell["board"]["rows"]) <= 40
+
+
+def test_rangziffer_nur_fuer_gefahrene_zeiten(token, laufendes_rennen):
+    """Der Rang gehört zur gemessenen Zeit, nicht zur Tabellenzeile.
+
+    Laufende Uhren reihen sich weiter live ein — aber ohne Platzziffer,
+    und die Ziffern der Gemessenen zählen lückenlos durch.
+    """
+    _messstelle_mit_laufenden_uhren(laufendes_rennen, token, 20 * 3600)
+    bild = laufendes_rennen.get(f"/api/playback/{token}/frame").json()
+    zeilen = bild["board"]["rows"]
+
+    laufend = [z for z in zeilen if z["running"]]
+    gemessen = [z for z in zeilen if not z["provisional"]]
+    assert laufend and gemessen, "Testaufbau: beides muss vorkommen"
+    assert all(z["rank"] is None for z in laufend)
+    assert sorted(z["rank"] for z in gemessen) == list(range(1, len(gemessen) + 1))
+
+    # Und die Reihenfolge der Ziffern folgt der gefahrenen Zeit. Die
+    # ausgegebene Zeit ist auf die Zehntelsekunde gerundet; wer enger
+    # beieinanderliegt, darf in jeder Reihenfolge stehen.
+    nach_rang = sorted(gemessen, key=lambda z: z["rank"])
+    zeiten = [z["t_s"] for z in nach_rang]
+    assert all(b >= a - 0.2 for a, b in zip(zeiten, zeiten[1:]))
+
+
+def test_vorheriger_rang_nur_fuer_die_messstelle_davor(token, laufendes_rennen):
+    """„Rg −1" ist der Platz an der Messstelle davor — oder nichts."""
+    steuern = lambda a, v: laufendes_rennen.post(  # noqa: E731
+        f"/api/playback/{token}/control", json={"action": a, "value": v}
+    )
+    steuern("mode", "split")
+    steuern("split_follow", False)
+    steuern("seek", 20 * 3600)
+    steuern("split", 0)
+    erste = laufendes_rennen.get(f"/api/playback/{token}/frame").json()
+    assert all(z["prev_rank"] is None for z in erste["board"]["rows"]), \
+        "vor der ersten Messstelle gibt es keine davor"
+
+    steuern("split", 6)
+    spaeter = laufendes_rennen.get(f"/api/playback/{token}/frame").json()
+    zeilen = spaeter["board"]["rows"]
+    raenge = [z["prev_rank"] for z in zeilen if z["prev_rank"] is not None]
+    assert raenge, "an einer späteren Messstelle muss es sie geben"
+    assert len(set(raenge)) == len(raenge), "jeder Platz nur einmal vergeben"
+    assert min(raenge) == 1
 
 
 def test_kopfzeile_zeigt_die_beste_gefahrene_zeit(token, laufendes_rennen):

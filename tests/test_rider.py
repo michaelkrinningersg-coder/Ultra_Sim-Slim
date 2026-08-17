@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import numpy as np
+import pytest
 
 from ultraslim.core.names import NATIONS, TEAM_NAMES
 from ultraslim.core.rider import (
@@ -89,6 +90,25 @@ def test_systemmasse_und_frontalflaeche_sind_abgeleitet():
     rider = riders[0]
     assert rider.system_mass_kg == rider.weight_kg + 7.5
     assert 0.20 < rider.frontal_area_m2 < 0.32
+
+
+def test_abfahrtswert_liegt_um_fuenfzig_und_streut_breit():
+    """Die Glocke um fünfzig, aber breiter als die Normalverteilung.
+
+    Die Beta-Verteilung ist von Haus aus auf null bis hundert begrenzt —
+    anders als eine abgeschnittene Gaußkurve staut sich nichts an den
+    Rändern, und trotzdem kommen die Extremwerte wirklich vor.
+    """
+    _, riders = generate_pool()
+    werte = np.array([r.descent_skill for r in riders])
+    assert werte.min() >= 0.0 and werte.max() <= 100.0
+    assert werte.mean() == pytest.approx(50.0, abs=3.0)
+    assert werte.std() > 19.0, "breiter als Gauß(50, 18) nach dem Abschneiden"
+    assert werte.min() < 10.0 and werte.max() > 90.0
+    # Kein Klumpen auf den Rändern: das war der Grund gegen das Abschneiden.
+    assert np.count_nonzero(werte < 2.0) + np.count_nonzero(werte > 98.0) < 5
+    # Und der normierte Wert ist genau der Hundertstel davon.
+    assert riders[0].descent_norm == pytest.approx(riders[0].descent_skill / 100.0)
 
 
 def test_derselbe_seed_liefert_denselben_pool():

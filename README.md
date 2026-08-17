@@ -1,8 +1,9 @@
 # UltraSim Slim
 
 Ultracycling-Simulator, schlanke Fassung. Ein Fahrer hat genau drei
-Eigenschaften — **FTP, Gewicht, Größe** —, eine Strecke ist ein
-zweidimensionales Höhenprofil, und alles andere folgt aus der Physik.
+körperliche Eigenschaften — **FTP, Gewicht, Größe** — und einen
+**Abfahrtswert**, eine Strecke ist ein zweidimensionales Höhenprofil, und
+alles andere folgt aus der Physik.
 
 Ein Rennen wird **nie vorberechnet**. Die Engine ist ein angehaltener
 Generator, der genau so weit gezogen wird, wie die Uhr des Zuschauers
@@ -87,8 +88,31 @@ Zielleistung = `FTP · IF · Tagesform · Steigungsfaktor · Trittrauschen`.
 - Bergab läuft die Leistung über die Trittfrequenz aus: Im größten Gang
   (9,55 m Entfaltung) ist bei 114 rpm Schluss.
 
+### Der Abfahrtswert
+
+Die einzige Eigenschaft, die nicht aus dem Körper folgt: eine Zahl von 0
+bis 100 je Fahrer. **Bei 100 rollt er ungebremst aus, bei 0 nimmt er die
+volle Drosselung mit** — höchstens **15 %** Tempo, hinterlegt als
+`DESCENT_THROTTLE_MAX` in `core/physics.py`.
+
+Gebremst wird über den **Widerstand**, nicht über die Watt. Ab 8 %
+Gefälle tritt der Fahrer im größten Gang ohnehin leer — dort sind die
+Watt schon null, und was null ist, kann man nicht kleiner machen. Wer
+15 % langsamer rollen soll, bekommt darum den Luftwiderstand von `1/f²`.
+Die Bremsrampe läuft zwischen 2 % und 6 % Gefälle linear hoch; im Flachen
+und bergauf ist der Wert wirkungslos.
+
+Die Verteilung ist eine **Beta(2, 2)**, auf 0 bis 100 gestreckt: eine
+Glocke um 50, aber breiter als die Normalverteilung (σ ≈ 22 statt 16,5)
+und von Haus aus begrenzt — eine abgeschnittene Gaußkurve hätte einen
+Klumpen auf 0 und 100 gelegt. Über eine Bergetappe kostet der Unterschied
+zwischen 100 und 0 rund **42 Minuten**, und zwar linear gestaffelt:
+100 → 40,678 h, 75 → 40,836, 50 → 41,002, 25 → 41,179, 0 → 41,368 h.
+
 Was es **nicht** gibt: Ermüdung, W′-Bilanz, Verpflegung, Schlaf, Wetter,
-Wind, Defekte, Stürze, Taktik, Windschatten, Pausen. Das ist Absicht.
+Wind, Defekte, Stürze, Taktik, Windschatten, Pausen — und keine
+Geschwindigkeitsgrenze in der Abfahrt außer der, die der Abfahrtswert
+setzt. Das ist Absicht.
 
 ## Eigene Strecken aus GPX
 
@@ -182,6 +206,24 @@ entscheidet die Startnummer, damit die Reihenfolge reproduzierbar bleibt.
 Die Setzliste ist dabei die Papierform, nicht das Ergebnis: Sie kennt
 Punkte, FTP und Gewicht, aber weder die Tagesform noch das Gelände.
 
+### Wo gemessen wird
+
+Zeitmessungen liegen **alle 5 % der Distanz** — und zusätzlich auf jedem
+**Gipfel** eines Anstiegs der Kategorien HC, 1 und 2. Fällt ein Gipfel
+ohnehin fast auf einen Rasterpunkt (weniger als 2 km daneben, und
+höchstens 40 % des Rasterabstands), ersetzt er ihn, statt eine zweite
+Messstelle daneben zu setzen.
+
+Auf einer flachen Strecke sind das genau zwanzig Messstellen, im
+Hochgebirge fünfunddreißig — achtzehn davon Gipfel.
+
+| Strecke | Messstellen | davon Gipfel |
+|---|---|---|
+| Ostsee, Toskana, Ardennen | 20 | – |
+| Karpaten | 29 | 9 |
+| Pyrenäen | 31 | 12 |
+| Alpen | 35 | 18 |
+
 Zwei Wertungen im Board:
 
 - **Splitwertung** — die gemessene Zeit an einer Messstelle. Wer noch
@@ -204,9 +246,25 @@ Zwei Wertungen im Board:
   Sekundentakt zu springen. Gerechnet wird dabei nichts: Der Vorlauf ist
   auf das nächste erwartete Bild gedeckelt, genau wie bei der Uhr.
 
+  Eine **Rangziffer trägt nur, wer die Messstelle gefahren hat.** Die
+  laufenden Uhren reihen sich weiter live zwischen die gemessenen Zeiten
+  ein, stehen dort aber mit einem Strich: 1, 2, –, 3. Der Rang gehört zur
+  Zeit, nicht zur Tabellenzeile, und wechselt darum nicht den Besitzer,
+  nur weil eine fremde Uhr weiterläuft.
+
+  Die Splitwertung zeigt **das ganze gewertete Feld**, nicht den
+  Vierzig-Zeilen-Ausschnitt der virtuellen Rangliste: Sie ist eine
+  Ergebnisliste, und wer bei Rang 180 steht, will dort auch stehen. Die
+  Spaltenköpfe bleiben beim Scrollen kleben.
+
   Die angeheftete Kopfzeile zeigt den Halter der besten **gefahrenen**
   Zeit — auf ihn bezieht sich der Rückstand, und Rang eins ist dort
   regelmäßig jemand, dessen Uhr erst fünf Minuten läuft.
+
+  Die Spalte **Rg −1** ist der Platz an der Messstelle davor — in der
+  Splitwertung für alle dieselbe, sodass die Trendspalte daneben genau
+  die Differenz ist. Wer die Messstelle davor noch nicht passiert hat,
+  bekommt auch dort keine Ziffer.
 - **Bergwertung** — die Auffahrtsdauer eines Anstiegs. Dieselbe
   Live-Zeitnahme wie am Split, nur beginnt die Uhr am Fuß des Berges;
   gewertet wird, wer den Fuß erreicht hat. Dazu die VAM: Höhenmeter je
@@ -292,7 +350,7 @@ Kein Node, kein Build-Schritt. Alpine.js liegt als Datei bei.
 
 ```
 pip install -r requirements-dev.txt
-pytest -q                                   # 197 Tests
+pytest -q                                   # 207 Tests
 python -m ultraslim.app --no-browser        # Server ohne Browser
 ```
 

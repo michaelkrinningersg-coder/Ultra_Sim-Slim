@@ -208,6 +208,54 @@ def test_abfahrt_laeuft_die_leistung_aus():
     assert float(physics.downhill_power_taper(20.0)) == pytest.approx(0.0)
 
 
+def test_die_bremse_greift_erst_im_gefaelle():
+    """Bergauf und im Flachen wird nicht gebremst, unten voll."""
+    rampe = physics.brake_ramp(np.array([0.05, 0.0, -physics.DESCENT_BRAKE_LO,
+                                         -0.04, -physics.DESCENT_BRAKE_HI, -0.15]))
+    assert rampe[0] == 0.0 and rampe[1] == 0.0 and rampe[2] == 0.0
+    assert 0.0 < rampe[3] < 1.0, "dazwischen läuft sie linear hoch"
+    assert rampe[4] == pytest.approx(1.0)
+    assert rampe[5] == pytest.approx(1.0), "steiler wird nicht mehr stärker gebremst"
+
+
+def test_der_abfahrtswert_staffelt_die_drosselung():
+    """Hundert fährt ungebremst, null nimmt die volle Drosselung mit."""
+    voll = np.ones(3)
+    faktor = physics.descent_speed_factor(voll, np.array([1.0, 0.5, 0.0]))
+    assert faktor[0] == pytest.approx(1.0)
+    assert faktor[1] == pytest.approx(1.0 - physics.DESCENT_THROTTLE_MAX / 2)
+    assert faktor[2] == pytest.approx(1.0 - physics.DESCENT_THROTTLE_MAX)
+
+    # Gebremst wird über den Widerstand: Wer fünfzehn Prozent langsamer
+    # rollen soll, braucht den Luftwiderstand von 1/f².
+    luft = physics.brake_drag_factor(np.ones(2), np.array([1.0, 0.0]))
+    assert luft[0] == pytest.approx(1.0), "ohne Drosselung kein Zuschlag"
+    assert luft[1] == pytest.approx(1.0 / (1.0 - physics.DESCENT_THROTTLE_MAX) ** 2)
+
+    # Und ohne Gefälle ist auch der schlechteste Abfahrer unbehelligt.
+    assert physics.brake_drag_factor(np.zeros(1), np.zeros(1))[0] == pytest.approx(1.0)
+
+
+def test_die_gedrosselte_abfahrt_ist_wirklich_langsamer():
+    """Die Drosselung ist auf das Tempo geeicht, nicht auf den Widerstand."""
+    grade = np.array([-0.08])
+    gemessen = []
+    for skill in (1.0, 0.0):
+        v = np.array([12.0])
+        cda = np.array([0.30]) * physics.brake_drag_factor(
+            physics.brake_ramp(grade), np.array([skill])
+        )
+        for _ in range(4000):
+            v = physics.integrate_step(
+                v, np.zeros(1), grade, np.array([78.0]), cda,
+                physics.rolling_crr(v), np.array([1.2]), 1.0,
+                *physics.slope_trig(grade),
+            )
+        gemessen.append(float(v[0]))
+    schnell, langsam = gemessen
+    assert langsam == pytest.approx(schnell * (1.0 - physics.DESCENT_THROTTLE_MAX), rel=0.02)
+
+
 def test_steigungsgeometrie():
     cos, sin = physics.slope_trig(np.array([0.0, 0.10]))
     assert cos[0] == pytest.approx(1.0)

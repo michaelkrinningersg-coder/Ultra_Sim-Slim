@@ -187,6 +187,11 @@ th {
 td { padding: .18rem .35rem; border-bottom: 1px solid #1a2131; }
 
 .board { font-size: .82rem; }
+/* Die Zwischenwertung zeigt das ganze durchgefahrene Feld — bei
+   dreihundert Zeilen wären die Spaltenköpfe nach dem ersten Scrollen
+   weg, und „5:41:12" stünde ohne Überschrift da. Sie bleiben unter der
+   Kopfleiste kleben. */
+.board thead th { position: sticky; top: 44px; z-index: 5; background: var(--bg-panel); }
 .board tbody tr { transition: background-color .25s ease; }
 .board tr.focus { background: #2a2410; box-shadow: inset 3px 0 0 var(--accent); }
 .board tr.leader-row { background: #101a26; }

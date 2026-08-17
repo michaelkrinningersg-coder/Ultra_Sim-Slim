@@ -66,6 +66,29 @@ CADENCE_MAX = 114.0
 #: mit Mittreten.
 DEV_MAX_M = 9.55
 
+# ----------------------------------------------------------------------
+# Bremsen in der Abfahrt
+# ----------------------------------------------------------------------
+#: Wie stark ein Fahrer mit Abfahrtswert 0 gegenüber einem mit 100
+#: gebremst wird — **die Stellschraube dieses Modells.**
+#:
+#: Fünfzehn Prozent sind an der Enge des Feldes kalibriert. Auf der
+#: Alpenstrecke (1000 km, 356 km Gefälle) kosten sie den schlechtesten
+#: Abfahrer 52 Minuten gegenüber dem besten; dort liegt Rang 2 bei
+#: +30 und Rang 5 bei +60 Minuten. Der Wert entscheidet damit Duelle und
+#: kostet rund vier Plätze, dreht aber keine Hierarchie um.
+#:
+#: Zum Vergleich, falls hier jemand dreht: Bei 30 % verliert ein Fahrer
+#: mit 5,6 W/kg und Abfahrtswert 0 gegen einen mit 5,0 W/kg und 100 —
+#: dann wöge Abfahren schwerer als Klettern.
+DESCENT_THROTTLE_MAX = 0.15
+
+#: Zwischen diesen Gefällen blendet die Bremse ein. Bei zwei Prozent
+#: bremst niemand — dort tritt der Fahrer noch mit drei Vierteln seiner
+#: Zielleistung. Ab sechs Prozent rollt er ohnehin nur noch.
+DESCENT_BRAKE_LO = 0.02
+DESCENT_BRAKE_HI = 0.06
+
 #: Globaler Sicherheitsdeckel gegen Ausreißer in der Abfahrt.
 MAX_SPEED = 23.6  # 85 km/h
 #: Untergrenze für die Antriebsrechnung — P/v ist bei v → 0 singulär.
@@ -125,6 +148,56 @@ def slope_trig(grade: np.ndarray | float) -> tuple[np.ndarray, np.ndarray]:
     g = np.asarray(grade, dtype=np.float64)
     cos = 1.0 / np.sqrt(1.0 + g * g)
     return cos, g * cos
+
+
+def brake_ramp(grade: np.ndarray | float) -> np.ndarray:
+    """Wie stark die Bremse bei dieser Steigung überhaupt greift.
+
+    Null im Flachen und am Anstieg, eins ab sechs Prozent Gefälle,
+    dazwischen linear. Hängt nur an der Strecke — die Engine rechnet sie
+    einmal je Rasterpunkt vor.
+    """
+    g = np.asarray(grade, dtype=np.float64)
+    return np.clip((-g - DESCENT_BRAKE_LO) / (DESCENT_BRAKE_HI - DESCENT_BRAKE_LO), 0.0, 1.0)
+
+
+def descent_speed_factor(
+    ramp: np.ndarray | float, skill_norm: np.ndarray | float
+) -> np.ndarray:
+    """Anteil der freien Endgeschwindigkeit, den ein Fahrer zulässt.
+
+    ``skill_norm`` ist der Abfahrtswert auf 0 bis 1. Bei 1 bleibt alles,
+    wie es ohne Bremse wäre; bei 0 greift ``DESCENT_THROTTLE_MAX``,
+    soweit die Steilheit es hergibt.
+    """
+    return 1.0 - DESCENT_THROTTLE_MAX * (1.0 - np.asarray(skill_norm, dtype=np.float64)) * ramp
+
+
+def brake_drag_factor(
+    ramp: np.ndarray | float, skill_norm: np.ndarray | float
+) -> np.ndarray:
+    """Faktor auf den Luftwiderstand, der genau diese Drosselung erzeugt.
+
+    **Warum über den Widerstand und nicht über die Watt:** Ab acht
+    Prozent Gefälle tritt der Fahrer im größten Gang leer, die
+    Antriebsleistung ist dort bereits null. Man kann nichts wegnehmen,
+    was nicht da ist — Bremsen heißt Energie *vernichten*, nicht Antrieb
+    reduzieren.
+
+    Der Zusammenhang ist exakt: Im Gleichgewicht hält der Luftwiderstand
+    die Hangabtriebskraft, also ``½·ρ·CdA·v² = const``. Wer auf den
+    Anteil ``f`` der Endgeschwindigkeit will, braucht deshalb den
+    ``1/f²``-fachen Widerstand.
+
+    Dass daraus rechnerisch ein größerer CdA wird, ist Buchführung und
+    keine Behauptung über die Sitzposition: Physikalisch sind es
+    Bremsbeläge. Der Vorteil dieser Form ist, dass sie als *Kraft* in
+    die Bilanz fällt — der Integrator bremst damit weich in die Kurve
+    hinein und beschleunigt danach von selbst wieder, statt an einer
+    harten Kante abzuschneiden.
+    """
+    f = descent_speed_factor(ramp, skill_norm)
+    return 1.0 / (f * f)
 
 
 def downhill_power_taper(v: np.ndarray | float) -> np.ndarray:
