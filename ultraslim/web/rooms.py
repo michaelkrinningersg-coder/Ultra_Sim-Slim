@@ -50,7 +50,7 @@ JUMP_STEP_S = 60.0
 #: Sortierschlüssel, die das Board kennt.
 SORT_FIELDS = frozenset(
     {"zeit", "nr", "name", "team", "rueckstand", "km", "biscp", "trend", "tempo",
-     "leistung", "vam", "vorrang", "verfall", "aero", "profil", "anlauf", "spurt", "rhythmus", "energie"}
+     "leistung", "vam", "vorrang", "verfall", "aero", "profil", "anlauf", "spurt", "rhythmus", "energie", "verfolger", "hoehe"}
 )
 
 
@@ -566,6 +566,7 @@ class ViewSession:
         fade = np.where(started, self._verfall(t, finished), np.nan)
         # Der Schub gilt nur, solange der Fahrer unterwegs ist.
         energie = np.where(started & ~finished, live.energy_at(t), 0.0)
+        defekt = ~np.isnan(live.mech_at_wall) & started
 
         rows: dict[int, dict] = {}
         for k, rider in enumerate(room.riders):
@@ -597,7 +598,10 @@ class ViewSession:
                 "start_profile": round(rider.start_profile),
                 "finish_kick": round(rider.finish_kick),
                 "rhythm": round(rider.rhythm),
-                "energy_w": None if energie[k] <= 0 else round(float(energie[k])),
+                "energy_w": None if energie[k] == 0 else round(float(energie[k])),
+                "chase": round(rider.chase),
+                "altitude": round(rider.altitude),
+                "mech": bool(defekt[k]),
                 "power_w": int(round(float(live.power_w[k]))) if started[k] and not finished[k] else 0,
                 "state": (
                     STATE_FINISHED if finished[k] else (STATE_WAITING if waiting else 0)
@@ -806,6 +810,10 @@ class ViewSession:
                 return -row["rhythm"]
             if key == "energie":
                 return -(row["energy_w"] or 0)
+            if key == "verfolger":
+                return -row["chase"]
+            if key == "hoehe":
+                return -row["altitude"]
             if key == "profil":
                 return -row["climb_profile"]
             if key == "verfall":
@@ -886,8 +894,18 @@ class ViewSession:
             "start_profile": round(rider.start_profile),
             "finish_kick": round(rider.finish_kick),
             "rhythm": round(rider.rhythm),
+            "chase": round(rider.chase),
+            "altitude": round(rider.altitude),
+            #: Der Duellgegner dieses Rennens, falls es einen gibt.
+            "rival": (
+                {"bib": room.riders[int(live.rival_of[i])].bib,
+                 "name": room.riders[int(live.rival_of[i])].name}
+                if live.rival_of[i] >= 0 else None
+            ),
+            "home": bool(live.home_bonus[i] > 0),
+            "mech": bool(not np.isnan(live.mech_at_wall[i])),
             "energy_w": (
-                round(float(schub)) if started[i] and not finished[i] and schub > 0 else None
+                round(float(schub)) if started[i] and not finished[i] and schub != 0 else None
             ),
             # Die Unruhe des Geländes an seiner Stelle und was sie ihn
             # gerade kostet — ohne die beiden wäre der Rhythmuswert eine

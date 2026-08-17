@@ -1,10 +1,11 @@
 # UltraSim Slim
 
 Ultracycling-Simulator, schlanke Fassung. Ein Fahrer hat genau drei
-körperliche Eigenschaften — **FTP, Gewicht, Größe** — und sieben Zahlen
+körperliche Eigenschaften — **FTP, Gewicht, Größe** — und neun Zahlen
 von 0 bis 100, die sagen, was er damit anfängt: **Abfahrt**,
 **Ausdauer**, **Aerodynamik**, **Kletterprofil**, **Startprofil**,
-**Endspurt** und **Rhythmus**. Eine Strecke ist ein zweidimensionales Höhenprofil, und
+**Endspurt**, **Rhythmus**, **Verfolgerinstinkt** und
+**Höhentoleranz**. Eine Strecke ist ein zweidimensionales Höhenprofil, und
 alles andere folgt aus der Physik.
 
 Ein Rennen wird **nie vorberechnet**. Die Engine ist ein angehaltener
@@ -77,7 +78,9 @@ Fahrer vierzehn Prozent Zusatzmasse, beim schweren achteinhalb.
 ### Pacing
 
 Zielleistung = `FTP · IF · Tagesform · Verfall · Steigungsfaktor · Profil ·
-Startprofil · Endspurt · Rhythmus · Trittrauschen`.
+Startprofil · Endspurt · Rhythmus · Höhe · Verfolger · Teamgeist ·
+Trittrauschen`, dazu ein Zuschlag auf die FTP aus Schub oder Hungerast
+und der Heimvorteil auf die Grundleistung.
 
 - **IF** folgt der Renndistanz: 0,72 bei 300 km, 0,70 bei 400, 0,66 bei
   600, 0,64 bei 700, 0,62 bei 850, 0,60 bei 1000 km.
@@ -93,7 +96,7 @@ Startprofil · Endspurt · Rhythmus · Trittrauschen`.
 
 ### Der Abfahrtswert
 
-Die erste der sieben Zahlen, die nicht aus dem Körper folgen. **Bei 100 rollt er ungebremst aus, bei 0 nimmt er die
+Die erste der neun Zahlen, die nicht aus dem Körper folgen. **Bei 100 rollt er ungebremst aus, bei 0 nimmt er die
 volle Drosselung mit** — höchstens **15 %** Tempo, hinterlegt als
 `DESCENT_THROTTLE_MAX` in `core/physics.py`.
 
@@ -370,6 +373,102 @@ mitgeschrieben werden müsste.
 Sichtbar wird der Schub als Chip neben dem Namen (`energiegeladen
 +24 W`), als eigene Ticker-Gruppe und als sortierbare Board-Spalte.
 
+### Hungerast
+
+Das Spiegelbild des Schubs, gleiche Mechanik, umgekehrtes Vorzeichen:
+1 % je Zeitmessung, **10 bis 40 Watt Abzug** auf die FTP bis zur
+nächsten Messstelle. Zwei Unterschiede:
+
+- Die Wahrscheinlichkeit **wächst mit der Fahrzeit** — nach fünfzehn
+  Stunden auf der eigenen Uhr ist sie doppelt so hoch. Damit fällt der
+  Wurf erst beim Durchfahren, nicht vorher: Gespeichert ist der Würfel,
+  entschieden wird an der Messstelle, und reproduzierbar bleibt es
+  trotzdem, weil beides aus der Splitzeit folgt.
+- Verschont sind die **dreißig schwächsten** Fahrer statt der stärksten.
+
+Gemessen: 82 Hungeräste auf der Ostsee (9 h Renndauer), 218 auf dem
+Alpenmarathon (48 h) — die Zeitabhängigkeit ist damit deutlich sichtbar.
+
+### Materialschaden
+
+Als einziges Ereignis **vor dem Rennen** gewürfelt: 2 % je Fahrer, also
+rund sechs im Feld. Wo genau, liegt zwischen 5 % und 95 % der Distanz.
+Der Halt kostet **30 bis 180 Sekunden** Standzeit; danach rollt der
+Fahrer auf dem Ersatzrad weiter, mit `Crr + 0,0005` bis ins Ziel.
+
+Der Fahrer steht wirklich: Tempo null, Leistung null, Distanz
+unverändert. Der Zeitpunkt des Halts wird festgehalten wie eine
+Splitzeit — eine Tatsache, kein laufender Zähler, damit der Rücksprung
+stimmt.
+
+### Verfolgerinstinkt
+
+Der erste Wert, der die **Rangliste liest**. An einer Messstelle sieht
+der Fahrer, wie weit er hinter dem Nächstbesseren liegt, der dort schon
+durch ist. Unter **60 Sekunden** drückt er bis zur nächsten Messstelle,
+und zwar linear stärker, je näher er dran ist — bei null Rückstand die
+vollen 4 %.
+
+Einseitig: Bei 0 lässt ihn das kalt, bei 100 reagiert er am stärksten.
+Beim Einzelstart gibt es keine Duelle auf der Straße; dieser Wert
+erzeugt sie in der Rangliste. Gemessen kommt die Lage in einem Rennen
+rund viertausendmal vor.
+
+Der Rückstand wird beim Durchfahren **festgehalten**: Später ließe er
+sich nicht mehr rekonstruieren, weil dann mehr Fahrer durch sind als in
+dem Moment.
+
+### Teamgeist
+
+Kein Fahrerwert, sondern eine Lage: Wessen Teamkollege bei der letzten
+Messstelle die Bestzeit hielt, tritt bis zur nächsten **2 %** fester.
+Das koppelt die Teamwertung erstmals ans Renngeschehen, statt sie nur
+am Ende zu summieren. Kommt je Rennen etwa 350-mal vor.
+
+### Heimvorteil
+
+Jede erzeugte Strecke hat Gastgebernationen; ihre Fahrer bekommen
+**1,5 %** auf die Zielleistung.
+
+| Strecke | Gastgeber | betroffene Fahrer |
+|---|---|---|
+| Ostsee | GER, NED | 78 |
+| Toskana | ITA | — |
+| Ardennen | BEL, NED | — |
+| Karpaten | AUT | — |
+| Pyrenäen | *keine* | 0 |
+| Alpen | AUT, SUI, ITA, GER | 168 |
+
+Die Pyrenäen liegen in keinem Land, das im Feld vertreten ist — dort
+gibt es keinen Heimvorteil, und das ist ehrlicher, als eine Nation
+dazuzuerfinden. Importierte GPX-Strecken wissen nicht, wo sie liegen;
+dort wirkt der Wert bei niemandem.
+
+### Duelle
+
+Vor **jedem** Rennen werden **drei Paare** ähnlich starker Fahrer
+gebildet — in der Rangfolge der relativen FTP direkt benachbart, also
+mit weniger als ein paar Hundertstel W/kg Unterschied. Jeder der sechs
+bekommt **0,5 bis 1,5 Prozent** Aufschlag auf die Tagesform.
+
+Die Paare werden aus dem Renn-Seed gezogen: In jedem Rennen andere,
+über die Saison also andere Geschichten. Im Ticker steht das Duell,
+sobald der Erste der beiden losrollt.
+
+### Höhentoleranz
+
+Die **Luftdichte** fällt schon mit der Höhe — sie steht in der
+Kräftebilanz und macht den Fahrer dort oben sogar schneller. Was
+fehlte, ist der physiologische Preis: Über tausend Metern kommt weniger
+Sauerstoff an.
+
+Der Abzug blendet zwischen **1000 m und 2500 m** linear ein, bis zu
+**8 %** bei Toleranz 0; bei 100 kostet die Höhe nichts. Von den sechs
+Strecken erreicht nur der Alpenmarathon die Einsatzhöhe nennenswert
+(52 % der Strecke über 1000 m, höchster Punkt 2542 m), Karpaten und
+Pyrenäen streifen sie auf gut einem Prozent. Das ist gewollt: Ein
+Höhenwert, der im Flachland wirkt, wäre keiner.
+
 Was es **nicht** gibt: W′-Bilanz, Verpflegung, Schlaf, Wetter, Wind,
 Defekte, Stürze, Taktik, Windschatten, Pausen — und keine
 Geschwindigkeitsgrenze in der Abfahrt außer der, die der Abfahrtswert
@@ -611,7 +710,7 @@ Kein Node, kein Build-Schritt. Alpine.js liegt als Datei bei.
 
 ```
 pip install -r requirements-dev.txt
-pytest -q                                   # 241 Tests
+pytest -q                                   # 250 Tests
 python -m ultraslim.app --no-browser        # Server ohne Browser
 ```
 

@@ -214,3 +214,18 @@ def test_rhythmuswert_ist_einseitig_gezogen():
     # Anders als bei Ausdauer oder Aero ist hier 100 der Nullpunkt des
     # Abzugs, nicht die Mitte.
     assert riders[0].rhythm_norm == pytest.approx(riders[0].rhythm / 100.0)
+
+
+def test_verfolger_und_hoehentoleranz_sind_gezogen():
+    _, riders = generate_pool()
+    for feld in ("chase", "altitude"):
+        werte = np.array([getattr(r, feld) for r in riders])
+        assert werte.min() >= 0.0 and werte.max() <= 100.0
+        assert werte.mean() == pytest.approx(50.0, abs=3.5)
+        assert werte.std() > 19.0
+    # Beide einseitig: null heißt null, hundert heißt kein Verlust.
+    assert riders[0].chase_norm == pytest.approx(riders[0].chase / 100.0)
+    assert riders[0].altitude_norm == pytest.approx(riders[0].altitude / 100.0)
+    # Und das Feld davor steht immer noch.
+    assert riders[0].name == "Oliver Kingsley"
+    assert riders[0].rhythm == pytest.approx(37.8, abs=0.1)

@@ -475,6 +475,8 @@ ul.plain li:last-child { border-bottom: 0; }
 .tick.focus { border-color: var(--accent); color: var(--fg); }
 .tick.best_time { border-color: var(--good); color: var(--good); }
 .tick.energy { border-color: var(--good); color: var(--good); }
+.tick.hunger, .tick.mechanical { border-color: var(--bad); color: var(--bad); }
+.tick.rivalry { border-color: var(--accent-2); color: var(--accent-2); }
 .tick.dnf, .tick.incident { border-color: var(--bad); color: var(--bad); }
 .tick.sleep { border-color: var(--accent-2); color: var(--accent-2); }
 .tick.finish { border-color: var(--good); color: var(--fg); }
@@ -723,6 +725,9 @@ details.why[open] > summary::before { content: "▾ "; }
 /* Der Schub leuchtet, solange er gilt — er ist das einzige Ereignis in
    dieser Fassung, das einem einzelnen Fahrer etwas schenkt. */
 .chip.energy { border-color: var(--good); color: var(--good); background: rgba(74,222,128,.08); }
+.chip.hunger { border-color: var(--bad); color: var(--bad); background: rgba(248,113,122,.08); }
+.chip.rival { border-color: var(--accent-2); color: var(--accent-2); }
+.chip.home { border-color: var(--accent); color: var(--accent); }
 
 /* Wer noch nicht gestartet ist: vorhanden, aber zurückgenommen. */
 .board tr.waiting td { opacity: .45; }

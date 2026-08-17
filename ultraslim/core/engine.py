@@ -155,6 +155,75 @@ ENERGY_BONUS_W = (10.0, 50.0)
 #: den Favoriten noch weiter nach vorn tragen.
 ENERGY_EXCLUDE_TOP = 30
 
+#: „Hungerast" — das Spiegelbild. Dieselbe Mechanik, umgekehrtes
+#: Vorzeichen, mit zwei Unterschieden: Die Wahrscheinlichkeit **wächst
+#: mit der Fahrzeit** (nach ``HUNGER_DOUBLE_AFTER_S`` ist sie doppelt so
+#: hoch), und verschont sind die *schwächsten* Fahrer statt der
+#: stärksten. Ein Zufallsschlag soll das Feld aufmischen, nicht den
+#: Letzten noch weiter nach hinten treten.
+HUNGER_EVENT_P = 0.01
+HUNGER_PENALTY_W = (10.0, 40.0)
+HUNGER_DOUBLE_AFTER_S = 15.0 * 3600.0
+HUNGER_SPARE_WEAKEST = 30
+
+#: Materialschaden. **Vor dem Rennen** gewürfelt: Wen es trifft, steht
+#: von Anfang an fest, nur nicht, dass es ihn trifft. Bei zwei Prozent
+#: sind das rund sechs Fahrer je Rennen.
+#:
+#: Der Halt kostet Standzeit, danach fährt der Fahrer auf dem Ersatzrad
+#: — spürbar am erhöhten Rollwiderstand bis ins Ziel.
+MECHANICAL_P = 0.02
+MECHANICAL_STOP_S = (30.0, 180.0)
+MECHANICAL_CRR_ADD = 0.0005
+#: Wo auf der Strecke, als Anteil. Nicht ganz am Anfang und nicht im
+#: Ziel — ein Defekt auf den letzten Metern wäre eine Pointe, keine
+#: Simulation.
+MECHANICAL_WHERE = (0.05, 0.95)
+
+#: Verfolgerinstinkt. An einer Messstelle sieht der Fahrer, wie weit er
+#: hinter dem Nächstbesseren liegt. Unter ``CHASE_GAP_S`` drückt er —
+#: und zwar umso mehr, je näher er dran ist.
+#:
+#: Einseitig wie der Endspurt: Bei 0 reagiert er nicht, bei 100 am
+#: stärksten. Beim Einzelstart gibt es keine Duelle auf der Straße;
+#: dieser Wert erzeugt sie in der Rangliste.
+CHASE_GAP_S = 60.0
+CHASE_MAX = 0.04
+
+#: Teamgeist: Wessen Teamkollege bei der letzten Messstelle die Bestzeit
+#: hält, tritt fester. Kein Fahrerwert, sondern eine Lage — deshalb für
+#: alle gleich.
+TEAM_SPIRIT_GAIN = 0.02
+
+#: Heimvorteil für die Fahrer der Gastgebernationen einer Strecke. Es
+#: können mehrere sein; hat eine Strecke keine (importierte GPX etwa),
+#: wirkt der Wert bei niemandem.
+HOME_ADVANTAGE = 0.015
+
+#: Duelle: So viele Paare ähnlich starker Fahrer werden **vor jedem
+#: Rennen neu** gebildet, und jeder der beiden bekommt einen kleinen
+#: Aufschlag auf die Tagesform. „Ähnlich" heißt: in der Rangfolge der
+#: relativen FTP direkt nebeneinander.
+RIVAL_PAIRS = 3
+RIVAL_FORM_BONUS = (0.005, 0.015)
+
+#: Höhenluft. Die **Luftdichte** fällt schon mit der Höhe — sie steht in
+#: der Kräftebilanz und macht den Fahrer dort oben sogar schneller. Was
+#: fehlte, ist der physiologische Preis: Über tausend Metern kommt
+#: weniger Sauerstoff an, und das kostet Leistung.
+#:
+#: Der Effekt blendet zwischen ``ALTITUDE_START_M`` und
+#: ``ALTITUDE_FULL_M`` linear ein. Von den sechs Kalenderstrecken
+#: erreicht nur der Alpenmarathon die Einsatzhöhe nennenswert (52 % der
+#: Strecke über 1000 m, höchster Punkt 2542 m); Karpaten und Pyrenäen
+#: streifen sie auf gut einem Prozent, alles andere bleibt darunter.
+#: Das ist gewollt: Ein Höhenwert, der im Flachland wirkt, wäre keiner.
+ALTITUDE_START_M = 1000.0
+ALTITUDE_FULL_M = 2500.0
+#: Einseitig als Abzug, wie beim Rhythmus: Bei Toleranz 100 kostet die
+#: Höhe nichts, bei 0 das Maximum.
+ALTITUDE_MAX = 0.08
+
 #: Rauschen im Tritt. Zwei langsam wandernde Wellen, deren Summe
 #: höchstens zwei Prozent ausmacht — sichtbar in der Wattanzeige,
 #: praktisch wirkungslos auf die Endzeit.
@@ -248,6 +317,9 @@ class RaceConfig:
     #: Bestimmt die Setzliste. Fehlt sie oder ist sie leer, entscheidet
     #: allein die relative FTP.
     season_points: dict[int, int] | None = None
+    #: Gastgebernationen der Strecke. Ihre Fahrer bekommen den
+    #: Heimvorteil; leer heißt: niemand.
+    home_nations: tuple[str, ...] = ()
 
 
 def intensity_for_distance(distance_km: float) -> float:
@@ -255,6 +327,20 @@ def intensity_for_distance(distance_km: float) -> float:
     xs = [k for k, _ in IF_BY_KM]
     ys = [v for _, v in IF_BY_KM]
     return float(np.interp(distance_km, xs, ys))
+
+
+def altitude_ramp(elevation_m: np.ndarray) -> np.ndarray:
+    """Wie sehr die Höhe hier schon zählt — null bis eins."""
+    ele = np.asarray(elevation_m, dtype=np.float64)
+    return np.clip(
+        (ele - ALTITUDE_START_M) / (ALTITUDE_FULL_M - ALTITUDE_START_M), 0.0, 1.0
+    )
+
+
+def altitude_power_factor(ramp: np.ndarray, altitude_norm: np.ndarray) -> np.ndarray:
+    """Abzug auf die Zielleistung aus Höhentoleranz und Höhe."""
+    fehlt = 1.0 - np.asarray(altitude_norm, dtype=np.float64)
+    return 1.0 - ALTITUDE_MAX * fehlt * np.asarray(ramp, dtype=np.float64)
 
 
 def roughness(grade: np.ndarray, step_m: float) -> np.ndarray:
@@ -379,6 +465,8 @@ class _Terrain:
     climb_ramp: np.ndarray
     #: Antrittsdichte, 0 bis 1. Daran hängt der Rhythmuswert.
     roughness: np.ndarray
+    #: Wie sehr die Höhe hier zählt, 0 bis 1.
+    altitude_ramp: np.ndarray
 
     @classmethod
     def build(cls, route: Route) -> _Terrain:
@@ -397,6 +485,7 @@ class _Terrain:
             brake_ramp=physics.brake_ramp(grade),
             climb_ramp=climb_ramp(grade),
             roughness=roughness(grade, route.step_m),
+            altitude_ramp=altitude_ramp(mid_ele),
         )
 
 
@@ -451,6 +540,10 @@ class LiveRace:
         self.kick_norm = np.array([r.finish_kick_norm for r in self.riders], dtype=np.float64)
         #: Der Rhythmuswert, 0 bis 1 — 1 heißt: kein Verlust.
         self.rhythm_norm = np.array([r.rhythm_norm for r in self.riders], dtype=np.float64)
+        #: Der Verfolgerinstinkt, 0 bis 1.
+        self.chase_norm = np.array([r.chase_norm for r in self.riders], dtype=np.float64)
+        #: Die Höhentoleranz, 0 bis 1 — 1 heißt: kein Verlust.
+        self.altitude_norm = np.array([r.altitude_norm for r in self.riders], dtype=np.float64)
 
         intensity = self.config.intensity_factor
         if intensity is None:
@@ -482,8 +575,57 @@ class LiveRace:
         treffer[stark, :] = False
         self.energy_table = np.where(treffer, hoehe, 0.0)
 
+        # „Hungerast": derselbe Bau, aber der Würfel bleibt roh liegen.
+        # Ob er fällt, hängt an der Fahrzeit an der Messstelle — und die
+        # steht erst fest, wenn der Fahrer dort ist. Gespeichert wird
+        # deshalb der Wurf, nicht das Ergebnis; entschieden wird beim
+        # Durchfahren und bleibt trotzdem reproduzierbar.
+        self.hunger_roll = rng.random((n, n_splits))
+        self.hunger_penalty = rng.uniform(*HUNGER_PENALTY_W, (n, n_splits))
+        schwach = np.argsort(wkg, kind="stable")[:HUNGER_SPARE_WEAKEST]
+        self.hunger_roll[schwach, :] = 1.0     # ein Wurf, der nie fällt
+
+        # Materialschaden: **vor dem Rennen** gewürfelt.
+        self.mech_hit = rng.random(n) < MECHANICAL_P
+        self.mech_dist_m = rng.uniform(*MECHANICAL_WHERE, n) * route.distance_m
+        self.mech_stop_s = rng.uniform(*MECHANICAL_STOP_S, n)
+        #: Rennuhr des Halts, NaN bis dahin — eine festgehaltene
+        #: Tatsache wie eine Splitzeit, kein laufender Zähler.
+        self.mech_at_wall = np.full(n, np.nan)
+
+        # Duelle: drei Paare ähnlich starker Fahrer, vor jedem Rennen
+        # neu. „Ähnlich" heißt in der Rangfolge der relativen FTP direkt
+        # nebeneinander — und weil das Paar aus dem Renn-Seed gezogen
+        # wird, sind es nie zweimal dieselben drei.
+        self.rival_of = np.full(n, -1, dtype=np.int64)
+        ordnung = np.argsort(-wkg, kind="stable")
+        moeglich = np.arange(0, n - 1)
+        if len(moeglich):
+            gewaehlt: list[int] = []
+            for kandidat in rng.permutation(moeglich):
+                if len(gewaehlt) >= RIVAL_PAIRS:
+                    break
+                if all(abs(int(kandidat) - g) > 1 for g in gewaehlt):
+                    gewaehlt.append(int(kandidat))
+            for pos in gewaehlt:
+                a, b = int(ordnung[pos]), int(ordnung[pos + 1])
+                self.rival_of[a], self.rival_of[b] = b, a
+        #: Der Aufschlag auf die Tagesform, den ein Duell trägt.
+        duell = self.rival_of >= 0
+        self.form = np.where(
+            duell, self.form * (1.0 + rng.uniform(*RIVAL_FORM_BONUS, n)), self.form
+        )
+
+        # Heimvorteil: die Gastgebernationen der Strecke, falls es welche
+        # gibt. Eine importierte GPX-Strecke hat keine, dann wirkt hier
+        # nichts.
+        heim = set(self.config.home_nations or ())
+        self.home_bonus = np.where(
+            np.array([r.nation in heim for r in self.riders]), HOME_ADVANTAGE, 0.0
+        )
+
         #: Zielleistung im Flachen, ohne Modulation.
-        self.base_power = self.ftp * self.intensity_factor * self.form
+        self.base_power = self.ftp * self.intensity_factor * self.form * (1.0 + self.home_bonus)
 
         # --- Start ------------------------------------------------------
         # Einzelstart wie im Zeitfahren: **der Schwächste zuerst, der
@@ -494,6 +636,26 @@ class LiveRace:
         # Die Engine rechnet in Rennuhr; was ein Fahrer auf seiner
         # eigenen Uhr hat, ist die Rennuhr minus seinem Startversatz.
         self.start_offset_s = self._start_order() * self.config.start_interval_s
+
+        # Die Duelle stehen vor dem ersten Tritt fest. Gemeldet werden
+        # sie, wenn der Erste der beiden losrollt — auf seiner Uhr also
+        # bei null. Eine Meldung ohne Fahrer und ohne Uhrzeit gäbe es im
+        # Ticker sonst nicht, und die Zusage „Rennuhr = Eigenzeit plus
+        # Startversatz" gilt für jede Meldung.
+        for i in np.nonzero(self.rival_of >= 0)[0]:
+            j = int(self.rival_of[i])
+            if i >= j:
+                continue
+            erster = int(i) if self.start_offset_s[i] <= self.start_offset_s[j] else j
+            self.events.append(
+                RaceEvent(
+                    self.riders[erster].id,
+                    "RIVALRY",
+                    0.0,
+                    float(self.start_offset_s[erster]),
+                    f"Duell: {self.riders[int(i)].name} gegen {self.riders[j].name}",
+                )
+            )
 
         # --- Zustand ---------------------------------------------------
         self.dist_m = np.zeros(n)
@@ -510,8 +672,15 @@ class LiveRace:
         self._n_splits = len(self.split_dist)
         self.next_split = np.zeros(n, dtype=np.int32)
         self.split_times = np.full((n, self._n_splits), np.nan)
+        #: Rückstand auf den Nächstbesseren, festgehalten beim
+        #: Durchfahren. Später ließe er sich nicht rekonstruieren — dann
+        #: wären mehr Fahrer durch als in dem Moment.
+        self.chase_gap = np.full((n, self._n_splits), np.inf)
+        #: Hielt beim Durchfahren ein Teamkollege die Bestzeit?
+        self.team_lead = np.zeros((n, self._n_splits), dtype=bool)
         self._split_seen = np.zeros(self._n_splits, dtype=np.int32)
         self._split_best = np.full(self._n_splits, np.inf)
+        self._split_best_by = np.full(self._n_splits, -1, dtype=np.int64)
 
         # --- Bergwertung -----------------------------------------------
         #
@@ -634,6 +803,9 @@ class LiveRace:
         profil = profil * start_profile_factor(anteil, self.start_dev)
         profil = profil * finish_kick_factor(anteil, self.kick_norm)
         profil = profil * rhythm_power_factor(terrain.roughness[idx], self.rhythm_norm)
+        profil = profil * altitude_power_factor(terrain.altitude_ramp[idx], self.altitude_norm)
+        verfolg, team = self._kopf_an_kopf(self.next_split)
+        profil = profil * verfolg * team
         # Der Schub liegt auf der FTP, nicht auf der Tretleistung —
         # deshalb geht er denselben Weg wie sie: mal Intensitätsfaktor,
         # mal Tagesform.
@@ -646,9 +818,31 @@ class LiveRace:
         # Abzug von der Leistung. Ab acht Prozent Gefälle tritt der
         # Fahrer im größten Gang leer — die Watt sind dort schon null,
         # und was null ist, kann man nicht kleiner machen.
+        # Materialschaden: Wer seine Stelle erreicht, steht — und rollt
+        # danach auf dem Ersatzrad weiter.
+        neu_defekt = (
+            self.mech_hit & np.isnan(self.mech_at_wall) & active & (self.dist_m >= self.mech_dist_m)
+        )
+        for i in np.nonzero(neu_defekt)[0]:
+            self.mech_at_wall[i] = t
+            rider = self.riders[int(i)]
+            self.events.append(
+                RaceEvent(
+                    rider.id,
+                    "MECHANICAL",
+                    t - self.start_offset_s[i],
+                    t,
+                    f"{rider.name} hat einen Defekt bei km {self.dist_m[i] / 1000:.0f}"
+                    f" — {self.mech_stop_s[i]:.0f} s Standzeit",
+                )
+            )
+        defekt_gehabt = ~np.isnan(self.mech_at_wall)
+        steht = defekt_gehabt & (t < self.mech_at_wall + self.mech_stop_s)
+
         f_brems = 1.0 - self._brake_coeff * terrain.brake_ramp[idx]
         cda = self.area * terrain.position_k[idx] / (f_brems * f_brems)
-        crr = physics.rolling_crr(self.v_ms)
+        crr = physics.rolling_crr(self.v_ms) + np.where(defekt_gehabt, MECHANICAL_CRR_ADD, 0.0)
+        power = np.where(steht, 0.0, power)
 
         v_new = physics.integrate_step(
             self.v_ms,
@@ -662,7 +856,7 @@ class LiveRace:
             cos_slope=terrain.cos_slope[idx],
             sin_slope=terrain.sin_slope[idx],
         )
-        self.v_ms = np.where(active, v_new, 0.0)
+        self.v_ms = np.where(active & ~steht, v_new, 0.0)
         self.power_w = power
         self.dist_m = self.dist_m + self.v_ms * DT
         self.sim_t = t
@@ -694,9 +888,27 @@ class LiveRace:
             own = t_cross - self.start_offset_s[ids]
             self.split_times[ids, s_idx] = own
             self.next_split[ids] = s_idx + 1
+            self._merke_lage(ids, s_idx, own)
 
             for k in np.argsort(t_cross, kind="stable"):
                 self._on_split(int(ids[k]), int(s_idx[k]), float(own[k]), float(t_cross[k]))
+
+    def _merke_lage(self, ids: np.ndarray, s_idx: np.ndarray, own: np.ndarray) -> None:
+        """Was der Fahrer beim Durchfahren vorfindet, festhalten.
+
+        Beides ließe sich später nicht mehr rekonstruieren: Wer die
+        Messstelle *jetzt* schon passiert hat und wer dort *jetzt* die
+        Bestzeit hält, ändert sich mit jeder weiteren Durchfahrt.
+        """
+        for k in range(len(ids)):
+            i, s = int(ids[k]), int(s_idx[k])
+            zeiten = self.split_times[:, s]
+            davor = zeiten[np.isfinite(zeiten) & (zeiten < own[k])]
+            if davor.size:
+                self.chase_gap[i, s] = float(own[k] - davor.max())
+            fuehrer = int(self._split_best_by[s])
+            if fuehrer >= 0 and fuehrer != i:
+                self.team_lead[i, s] = self.riders[fuehrer].team_id == self.riders[i].team_id
 
     def _on_split(self, rider_idx: int, split_idx: int, own_s: float, t_wall: float) -> None:
         split = self.route.splits[split_idx]
@@ -710,6 +922,23 @@ class LiveRace:
         # Der Schub gilt ab dieser Messstelle bis zur nächsten. Ohne
         # Meldung wäre er unsichtbar — und ein Ereignis, das niemand
         # bemerkt, ist keins.
+        # Der Hungerast fällt hier, nicht in der Tabelle: Seine
+        # Wahrscheinlichkeit hängt an der Zeit, die der Fahrer beim
+        # Durchfahren auf der Uhr hatte.
+        p_hunger = HUNGER_EVENT_P * (1.0 + own_s / HUNGER_DOUBLE_AFTER_S)
+        if self.hunger_roll[rider_idx, split_idx] < p_hunger:
+            strafe = float(self.hunger_penalty[rider_idx, split_idx])
+            naechste = self.route.splits[min(split_idx + 1, self._n_splits - 1)]
+            self.events.append(
+                RaceEvent(
+                    rider.id,
+                    "HUNGER",
+                    own_s,
+                    t_wall,
+                    f"{rider.name} hat einen Hungerast — −{strafe:.0f} W bis {naechste.name}",
+                )
+            )
+
         bonus = float(self.energy_table[rider_idx, split_idx])
         if bonus > 0.0:
             naechste = self.route.splits[min(split_idx + 1, self._n_splits - 1)]
@@ -727,6 +956,7 @@ class LiveRace:
         # der erste am Messpunkt.
         if own_s < self._split_best[split_idx]:
             self._split_best[split_idx] = own_s
+            self._split_best_by[split_idx] = rider_idx
             self.events.append(
                 RaceEvent(
                     rider.id,
@@ -990,8 +1220,10 @@ class LiveRace:
             profil = profil * np.minimum(
                 start_profile_factor(anteil, -0.5), start_profile_factor(anteil, 0.5)
             )
-            # Beim Rhythmus der schlechteste denkbare Wert, also null.
+            # Bei Rhythmus und Höhentoleranz der schlechteste denkbare
+            # Wert, also null.
             profil = profil * rhythm_power_factor(terrain.roughness, 0.0)
+            profil = profil * altitude_power_factor(terrain.altitude_ramp, 0.0)
             # Ebenso die schlechteste Position im Feld statt der des
             # schwächsten Fahrers.
             v = physics.steady_state_speed(
@@ -1003,7 +1235,9 @@ class LiveRace:
                 terrain.rho,
             )
             v = np.clip(v, 1.5, physics.MAX_SPEED)
-            self._duration_cache = float(np.sum(self.route.step_m / v) * 1.10)
+            self._duration_cache = float(
+                np.sum(self.route.step_m / v) * 1.10 + MECHANICAL_STOP_S[1]
+            )
         return self._duration_cache
 
     # ------------------------------------------------------------------
@@ -1072,9 +1306,36 @@ class LiveRace:
         return self._energy_for(np.count_nonzero(self.reached_mask(t_wall), axis=1))
 
     def _energy_for(self, passiert: np.ndarray) -> np.ndarray:
-        letzte = np.clip(np.asarray(passiert) - 1, 0, self._n_splits - 1)
-        bonus = self.energy_table[np.arange(len(self.riders)), letzte]
-        return np.where(np.asarray(passiert) >= 1, bonus, 0.0)
+        """Schub minus Hungerast, beides in Watt auf die FTP."""
+        passiert = np.asarray(passiert)
+        zeile = np.arange(len(self.riders))
+        letzte = np.clip(passiert - 1, 0, self._n_splits - 1)
+        gilt = passiert >= 1
+
+        bonus = np.where(gilt, self.energy_table[zeile, letzte], 0.0)
+
+        # Der Hungerast fällt erst beim Durchfahren: Seine
+        # Wahrscheinlichkeit hängt an der Fahrzeit, die dort auf der Uhr
+        # stand. Der Wurf lag vorher fest, das Ergebnis nicht.
+        zeit = np.nan_to_num(self.split_times[zeile, letzte])
+        p = HUNGER_EVENT_P * (1.0 + zeit / HUNGER_DOUBLE_AFTER_S)
+        faellt = gilt & (self.hunger_roll[zeile, letzte] < p)
+        strafe = np.where(faellt, self.hunger_penalty[zeile, letzte], 0.0)
+        return bonus - strafe
+
+    def _kopf_an_kopf(self, passiert: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+        """Verfolgerfaktor und Teamgeistfaktor zur Lage an der letzten Messstelle."""
+        passiert = np.asarray(passiert)
+        zeile = np.arange(len(self.riders))
+        letzte = np.clip(passiert - 1, 0, self._n_splits - 1)
+        gilt = passiert >= 1
+
+        abstand = np.where(gilt, self.chase_gap[zeile, letzte], np.inf)
+        naehe = np.clip(1.0 - abstand / CHASE_GAP_S, 0.0, 1.0)
+        verfolg = 1.0 + CHASE_MAX * self.chase_norm * naehe
+
+        team = np.where(gilt & self.team_lead[zeile, letzte], 1.0 + TEAM_SPIRIT_GAIN, 1.0)
+        return verfolg, team
 
     def roughness_at(self, dist_m: np.ndarray) -> np.ndarray:
         """Die Unruhe des Geländes an der Stelle jedes Fahrers."""
@@ -1122,10 +1383,25 @@ __all__ = [
     "roughness",
     "rhythm_power_factor",
     "RHYTHM_MAX",
+    "altitude_ramp",
+    "altitude_power_factor",
+    "ALTITUDE_MAX",
+    "ALTITUDE_START_M",
+    "ALTITUDE_FULL_M",
     "RHYTHM_REFERENCE",
     "ENERGY_EVENT_P",
     "ENERGY_BONUS_W",
     "ENERGY_EXCLUDE_TOP",
+    "HUNGER_EVENT_P",
+    "HUNGER_PENALTY_W",
+    "MECHANICAL_P",
+    "MECHANICAL_STOP_S",
+    "CHASE_GAP_S",
+    "CHASE_MAX",
+    "TEAM_SPIRIT_GAIN",
+    "HOME_ADVANTAGE",
+    "RIVAL_PAIRS",
+    "RIVAL_FORM_BONUS",
     "PROFILE_SPAN",
     "FADE_SPAN_PER_10H",
     "FADE_SPAN_MAX",

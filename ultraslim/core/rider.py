@@ -1,10 +1,11 @@
 """Fahrer, Teams und der Generator für den Pool.
 
 Ein Fahrer hat in dieser Fassung genau drei körperliche Eigenschaften:
-**FTP, Gewicht, Größe**. Was er damit anfängt, sagen sieben Zahlen von 0
+**FTP, Gewicht, Größe**. Was er damit anfängt, sagen neun Zahlen von 0
 bis 100: **Abfahrt**, **Ausdauer**, **Aerodynamik**, **Kletterprofil**,
-**Startprofil**, **Endspurt** und **Rhythmus**. Alles andere — Magen,
-Schlaf, Charakter — ist bewusst nicht da.
+**Startprofil**, **Endspurt**, **Rhythmus**, **Verfolgerinstinkt** und
+**Höhentoleranz**. Alles andere — Magen, Schlaf, Charakter — ist
+bewusst nicht da.
 """
 
 from __future__ import annotations
@@ -89,6 +90,8 @@ CLIMB_PROFILE_BETA = 2.0
 START_PROFILE_BETA = 2.0
 FINISH_KICK_BETA = 2.0
 RHYTHM_BETA = 2.0
+VERFOLGER_BETA = 2.0
+ALTITUDE_BETA = 2.0
 
 
 @dataclass(frozen=True)
@@ -145,6 +148,14 @@ class Rider:
     #: Gelände nichts, bei 0 verliert er dort das Maximum. Auf glatter
     #: Strecke ist der Wert für jeden wirkungslos.
     rhythm: float = 100.0
+    #: Verfolgerinstinkt, 0 bis 100. Einseitig: Bei 0 lässt ihn ein
+    #: knapper Rückstand kalt, bei 100 drückt er, sobald der
+    #: Nächstbessere in Reichweite ist.
+    chase: float = 0.0
+    #: Höhentoleranz, 0 bis 100. Einseitig: Bei 100 macht ihm die dünne
+    #: Luft nichts, bei 0 kostet sie am meisten. Unterhalb der
+    #: Einsatzhöhe ist der Wert für jeden wirkungslos.
+    altitude: float = 100.0
 
     # ------------------------------------------------------------------
     @property
@@ -195,6 +206,16 @@ class Rider:
         return float(np.clip(self.rhythm / 100.0, 0.0, 1.0))
 
     @property
+    def chase_norm(self) -> float:
+        """Der Verfolgerinstinkt auf 0 bis 1."""
+        return float(np.clip(self.chase / 100.0, 0.0, 1.0))
+
+    @property
+    def altitude_norm(self) -> float:
+        """Die Höhentoleranz auf 0 bis 1 — 1 heißt: kein Verlust."""
+        return float(np.clip(self.altitude / 100.0, 0.0, 1.0))
+
+    @property
     def frontal_area_m2(self) -> float:
         return float(physics.frontal_area(self.height_cm, self.weight_kg))
 
@@ -224,6 +245,8 @@ class Rider:
             "start_profile": round(self.start_profile, 1),
             "finish_kick": round(self.finish_kick, 1),
             "rhythm": round(self.rhythm, 1),
+            "chase": round(self.chase, 1),
+            "altitude": round(self.altitude, 1),
         }
 
 
@@ -317,12 +340,15 @@ def generate_pool(seed: int = 20260101) -> tuple[list[Team], list[Rider]]:
     anlauf = rng.beta(START_PROFILE_BETA, START_PROFILE_BETA, n) * 100.0
     spurt = rng.beta(FINISH_KICK_BETA, FINISH_KICK_BETA, n) * 100.0
     rhythmus = rng.beta(RHYTHM_BETA, RHYTHM_BETA, n) * 100.0
+    verfolger = rng.beta(VERFOLGER_BETA, VERFOLGER_BETA, n) * 100.0
+    hoehenluft = rng.beta(ALTITUDE_BETA, ALTITUDE_BETA, n) * 100.0
 
     riders = [
         replace(r, endurance=float(e), aero=float(a), climb_profile=float(p),
-                start_profile=float(sp), finish_kick=float(fk), rhythm=float(rh))
-        for r, e, a, p, sp, fk, rh
-        in zip(riders, ausdauer, aero, profil, anlauf, spurt, rhythmus)
+                start_profile=float(sp), finish_kick=float(fk), rhythm=float(rh),
+                chase=float(vf), altitude=float(hl))
+        for r, e, a, p, sp, fk, rh, vf, hl
+        in zip(riders, ausdauer, aero, profil, anlauf, spurt, rhythmus, verfolger, hoehenluft)
     ]
     return teams, riders
 
@@ -362,4 +388,6 @@ __all__ = [
     "START_PROFILE_BETA",
     "FINISH_KICK_BETA",
     "RHYTHM_BETA",
+    "VERFOLGER_BETA",
+    "ALTITUDE_BETA",
 ]

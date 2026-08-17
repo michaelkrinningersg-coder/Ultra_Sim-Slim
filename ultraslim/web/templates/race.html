@@ -79,9 +79,21 @@
             <!-- Der Schub ist ein Zustand, kein Stammwert: Er steht
                  neben dem Namen, solange er gilt, und verschwindet
                  danach wieder. -->
-            <span class="chip energy" x-show="focus.energy_w" x-cloak
-                  title="Energiegeladen: Schub auf die FTP bis zur nächsten Zeitmessung"
-                  x-text="`energiegeladen +${focus.energy_w} W`"></span>
+            <span class="chip" :class="focus.energy_w > 0 ? 'energy' : 'hunger'"
+                  x-show="focus.energy_w" x-cloak
+                  :title="focus.energy_w > 0
+                    ? 'Energiegeladen: Schub auf die FTP bis zur nächsten Zeitmessung'
+                    : 'Hungerast: Abzug auf die FTP bis zur nächsten Zeitmessung'"
+                  x-text="focus.energy_w > 0
+                    ? `energiegeladen +${focus.energy_w} W`
+                    : `Hungerast −${-focus.energy_w} W`"></span>
+            <span class="chip home" x-show="focus.home" x-cloak
+                  title="Heimvorteil: Der Fahrer startet in einer Gastgebernation dieser Strecke.">Heimrennen</span>
+            <span class="chip rival" x-show="focus.rival" x-cloak
+                  :title="`Duell dieses Rennens — beide mit Formaufschlag`"
+                  x-text="focus.rival ? `Duell gegen ${focus.rival.name}` : ''"></span>
+            <span class="chip cond" x-show="focus.mech" x-cloak
+                  title="Defekt gehabt: Standzeit verloren, seither auf dem Ersatzrad.">Defekt</span>
           </div>
 
           <!-- Die Uhr: die einzige Zahl, die groß sein muss. Sie steht
@@ -174,12 +186,31 @@
                   title="Wie gut er mit ständigem Auf und Ab zurechtkommt. Bei 100 kostet ihn unruhiges Gelände nichts, bei 0 am meisten.">Rhythmus</span>
               <span class="v" x-text="focus.rhythm"></span></div>
             <div class="cell"><span class="k"
+                  title="Verfolgerinstinkt: Wie stark er drückt, wenn der Nächstbessere an der letzten Messstelle unter einer Minute vor ihm lag.">Verfolger</span>
+              <span class="v" x-text="focus.chase"></span></div>
+            <div class="cell"><span class="k"
+                  title="Höhentoleranz: Bei 100 macht die dünne Luft nichts, bei 0 kostet sie am meisten. Unter tausend Metern wirkungslos.">Höhe</span>
+              <span class="v" x-text="focus.altitude"></span></div>
+
+            <div class="sep"></div>
+
+            <div class="cell"><span class="k"
+                  title="Startnummer des Duellgegners dieses Rennens.">Duell</span>
+              <span class="v" x-text="focus.rival ? `#${focus.rival.bib}` : '–'"></span></div>
+
+            <div class="sep"></div>
+
+            <div class="cell"><span class="k"
                   title="Antrittsdichte des Geländes an dieser Stelle, 0 bis 1: wie oft die Steigung hier drei Prozent von unten kreuzt.">Unruhe</span>
               <span class="v" x-text="focus.roughness.toFixed(2)"></span></div>
             <div class="cell"><span class="k"
                   title="Was der Rhythmuswert im Gelände an dieser Stelle gerade an Leistung kostet.">Bruch</span>
               <span class="v" :class="focus.rhythm_loss_pct > 0.05 ? 'bad' : ''"
                     x-text="focus.rhythm_loss_pct > 0.05 ? `−${focus.rhythm_loss_pct.toFixed(1).replace('.', ',')} %` : '±0,0 %'"></span></div>
+            <div class="cell"><span class="k"
+                  title="Schub oder Hungerast, in Watt auf die FTP.">Schub</span>
+              <span class="v" :class="focus.energy_w > 0 ? 'good' : focus.energy_w < 0 ? 'bad' : ''"
+                    x-text="focus.energy_w ? (focus.energy_w > 0 ? `+${focus.energy_w} W` : `−${-focus.energy_w} W`) : '±0 W'"></span></div>
           </div>
         </div>
       </template>

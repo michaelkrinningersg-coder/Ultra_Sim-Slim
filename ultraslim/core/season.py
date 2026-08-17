@@ -78,6 +78,12 @@ class RaceSpec:
     #: Seed des erzeugten Profils. Über alle Saisons gleich — die Strecke
     #: bleibt. ``None`` heißt: aus einer GPX-Datei importiert.
     route_seed: int | None = None
+    #: Gastgebernationen der Strecke. Ihre Fahrer bekommen den
+    #: Heimvorteil. Es dürfen mehrere sein — die Alpen liegen in vier
+    #: Ländern —, und es dürfen keine sein: Eine importierte Strecke
+    #: weiß nicht, wo sie liegt, und für die Pyrenäen hat das Feld keine
+    #: passende Nation.
+    home_nations: tuple[str, ...] = ()
 
     @property
     def imported(self) -> bool:
@@ -92,6 +98,7 @@ class RaceSpec:
             "archetype": self.archetype,
             "ascent_m": self.ascent_m,
             "route_seed": self.route_seed,
+            "home_nations": list(self.home_nations),
         }
 
     @classmethod
@@ -110,12 +117,16 @@ class RaceSpec:
 #: Der Kalender. Sechs Rennen von 300 bis 1000 Kilometern: eines flach,
 #: zwei wellig, zwei im Mittelgebirge, eines im Hochgebirge.
 CALENDAR: tuple[RaceSpec, ...] = (
-    RaceSpec(0, "ostsee", "Ostsee-Nachtfahrt", 300, "flach", 900, 1000),
-    RaceSpec(1, "toskana", "Toskana-Hügelmarathon", 400, "wellig", 3600, 1001),
-    RaceSpec(2, "ardennen", "Ardennen-Wellenritt", 600, "wellig", 5400, 1002),
-    RaceSpec(3, "karpaten", "Karpaten-Traverse", 700, "mittelgebirge", 10500, 1003),
+    RaceSpec(0, "ostsee", "Ostsee-Nachtfahrt", 300, "flach", 900, 1000, ("GER", "NED")),
+    RaceSpec(1, "toskana", "Toskana-Hügelmarathon", 400, "wellig", 3600, 1001, ("ITA",)),
+    RaceSpec(2, "ardennen", "Ardennen-Wellenritt", 600, "wellig", 5400, 1002, ("BEL", "NED")),
+    RaceSpec(3, "karpaten", "Karpaten-Traverse", 700, "mittelgebirge", 10500, 1003, ("AUT",)),
+    # Die Pyrenäen liegen in keinem Land, das im Feld vertreten ist —
+    # dort gibt es keinen Heimvorteil, und das ist ehrlicher, als eine
+    # Nation dazuzuerfinden.
     RaceSpec(4, "pyrenaeen", "Pyrenäen-Überquerung", 850, "mittelgebirge", 13000, 1004),
-    RaceSpec(5, "alpen", "Alpen-Hochgebirgsmarathon", 1000, "hochgebirge", 23000, 1005),
+    RaceSpec(5, "alpen", "Alpen-Hochgebirgsmarathon", 1000, "hochgebirge", 23000, 1005,
+             ("AUT", "SUI", "ITA", "GER")),
 )
 
 #: Die mitgelieferten Saisons. Gleiche Strecken, andere Tagesform.

@@ -51,7 +51,8 @@
             <th class="right">Ausdauer</th>
             <th class="right">Aero</th><th class="right">Profil</th>
             <th class="right">Start</th><th class="right">Spurt</th>
-            <th class="right">Rhythmus</th>
+            <th class="right">Rhythmus</th><th class="right">Verfolger</th>
+            <th class="right">Höhe</th>
             <th class="right">A<sub>frontal</sub></th></tr>
       </thead>
       <tbody>
@@ -74,6 +75,8 @@
           <td class="right mono">{{ r.start_profile|round|int }}</td>
           <td class="right mono">{{ r.finish_kick|round|int }}</td>
           <td class="right mono">{{ r.rhythm|round|int }}</td>
+          <td class="right mono">{{ r.chase|round|int }}</td>
+          <td class="right mono">{{ r.altitude|round|int }}</td>
           <td class="right mono faint">{{ '%.3f'|format(r.frontal_area_m2) }} m²</td>
         </tr>
         {% endfor %}

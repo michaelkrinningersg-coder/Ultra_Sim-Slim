@@ -21,15 +21,16 @@ const SPEEDS = [1, 5, 10, 30, 60, 300, 1000];
 
 /* Ereignisgruppen des Tickers.
  *
- * Zwei genügen in dieser Fassung: Es gibt weder Defekte noch Stürze
- * noch Hungeräste. Ein Typ, der hier nicht vorkommt, läuft immer mit –
- * ein neuer Ereignistyp soll nicht dadurch unsichtbar werden, dass
- * jemand vergessen hat, ihn einzutragen.
+ * Ein Typ, der hier nicht vorkommt, läuft immer mit – ein neuer
+ * Ereignistyp soll nicht dadurch unsichtbar werden, dass jemand
+ * vergessen hat, ihn einzutragen.
  */
 const TICKER_GROUPS = [
   { key: 'zeit', label: 'Zeiten', types: ['BEST_TIME', 'SPLIT_PASSED'] },
   { key: 'berg', label: 'Berg', types: ['BEST_CLIMB'] },
-  { key: 'energie', label: 'Energie', types: ['ENERGY'] },
+  { key: 'energie', label: 'Energie', types: ['ENERGY', 'HUNGER'] },
+  { key: 'pech', label: 'Pech', types: ['MECHANICAL'] },
+  { key: 'duell', label: 'Duelle', types: ['RIVALRY'] },
   { key: 'start', label: 'Starts', types: ['START'] },
   { key: 'ziel', label: 'Ziel', types: ['FINISH'] },
 ];
@@ -100,6 +101,18 @@ const BOARD_COLUMNS = [
     hint: 'Ein Schub, der an einer Zeitmessung anspringen kann und bis zur '
       + 'nächsten hält: 10 bis 50 Watt auf die FTP. Die dreißig stärksten Fahrer '
       + 'des Feldes kann er nicht treffen.',
+  },
+  {
+    key: 'verfolger',
+    label: 'Verfolger',
+    hint: 'Verfolgerinstinkt, 0 bis 100: Wie stark der Fahrer drückt, wenn der '
+      + 'Nächstbessere an der letzten Messstelle unter einer Minute vor ihm lag.',
+  },
+  {
+    key: 'hoehe',
+    label: 'Höhe',
+    hint: 'Höhentoleranz, 0 bis 100. Bei 100 macht die dünne Luft dem Fahrer '
+      + 'nichts, bei 0 kostet sie am meisten — unter tausend Metern bei niemandem.',
   },
   {
     key: 'verfall',
@@ -406,7 +419,11 @@ function raceLive(raceId) {
         case 'anlauf': return row.start_profile;
         case 'spurt': return row.finish_kick;
         case 'rhythmus': return row.rhythm;
-        case 'energie': return row.energy_w ? `+${row.energy_w} W` : '–';
+        case 'verfolger': return row.chase;
+        case 'hoehe': return row.altitude;
+        case 'energie':
+          if (!row.energy_w) return '–';
+          return row.energy_w > 0 ? `+${row.energy_w} W` : `−${-row.energy_w} W`;
         default: return '';
       }
     },
@@ -415,7 +432,9 @@ function raceLive(raceId) {
       if (key === 'trend') return row.trend > 0 ? 'pos' : row.trend < 0 ? 'neg' : 'faint';
       if (key === 'vam') return row.vam === null || row.vam === undefined ? 'faint' : '';
       if (key === 'vorrang') return row.prev_rank ? '' : 'faint';
-      if (key === 'energie') return row.energy_w ? 'good' : 'faint';
+      if (key === 'energie') {
+        return row.energy_w ? (row.energy_w > 0 ? 'good' : 'bad') : 'faint';
+      }
       if (key === 'verfall') {
         if (row.fade_pct === null || row.fade_pct === undefined) return 'faint';
         const d = row.fade_pct - 100;

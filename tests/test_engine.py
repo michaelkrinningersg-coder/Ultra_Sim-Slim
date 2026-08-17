@@ -10,8 +10,18 @@ from dataclasses import replace
 from ultraslim.core.engine import (
     CLIMB_GRADE_FULL,
     DT,
+    ALTITUDE_MAX,
+    ALTITUDE_START_M,
+    ALTITUDE_FULL_M,
+    CHASE_GAP_S,
+    CHASE_MAX,
     ENERGY_BONUS_W,
     ENERGY_EXCLUDE_TOP,
+    HOME_ADVANTAGE,
+    HUNGER_EVENT_P,
+    HUNGER_SPARE_WEAKEST,
+    RIVAL_PAIRS,
+    TEAM_SPIRIT_GAIN,
     FADE_SPAN_MAX,
     FADE_SPAN_PER_10H,
     FINISH_KICK_MAX,
@@ -24,6 +34,8 @@ from ultraslim.core.engine import (
     TICKS_PER_YIELD,
     LiveRace,
     RaceConfig,
+    altitude_power_factor,
+    altitude_ramp,
     climb_ramp,
     endurance_fade,
     finish_kick_factor,
@@ -843,3 +855,149 @@ def test_der_schub_ueberlebt_den_ruecksprung():
     frueh = race.energy_at(1800.0).copy()
     race.advance_to(4 * 3600.0)
     assert np.array_equal(race.energy_at(1800.0), frueh)
+
+
+def test_der_hungerast_wird_mit_der_zeit_wahrscheinlicher():
+    """Derselbe Wurf fällt spät im Rennen, früh nicht."""
+    teams, riders = grosses_feld(80)
+    race = LiveRace(kurzstrecke(km=200, hm=500), riders, teams,
+                    RaceConfig(name="Test", seed=7, start_interval_s=0.0))
+    race.energy_table[:] = 0.0
+    race.hunger_roll[:] = 1.0
+    race.hunger_penalty[:] = 30.0
+
+    # Ein Wurf genau zwischen der frühen und der späten Schwelle.
+    race.hunger_roll[0, 1] = HUNGER_EVENT_P * 1.5
+    passiert = np.full(len(riders), 2)
+
+    race.split_times[:] = np.nan
+    race.split_times[0, 1] = 0.0
+    assert race._energy_for(passiert)[0] == 0.0, "früh fällt derselbe Wurf nicht"
+
+    race.split_times[0, 1] = 20 * 3600.0
+    assert race._energy_for(passiert)[0] == pytest.approx(-30.0), "spät schon"
+
+
+def test_der_hungerast_verschont_die_schwaechsten():
+    teams, riders = grosses_feld(200)
+    race = LiveRace(kurzstrecke(km=300, hm=1000), riders, teams,
+                    RaceConfig(name="Test", seed=3))
+    wkg = np.array([r.w_per_kg for r in riders])
+    schwach = np.argsort(wkg, kind="stable")[:HUNGER_SPARE_WEAKEST]
+    # Ein Wurf von genau 1,0 kann nie unter die Wahrscheinlichkeit fallen.
+    assert np.all(race.hunger_roll[schwach] == 1.0)
+    assert np.any(race.hunger_roll < 0.02), "beim Rest darf es vorkommen"
+
+
+def test_der_defekt_kostet_standzeit_und_danach_rollwiderstand():
+    teams, riders = grosses_feld(40)
+    zeiten = []
+    for defekt in (False, True):
+        race = LiveRace(kurzstrecke(km=150, hm=400), riders, teams,
+                        RaceConfig(name="Test", seed=5, start_interval_s=0.0))
+        race.energy_table[:] = 0.0
+        race.hunger_roll[:] = 1.0
+        race.mech_hit[:] = False
+        if defekt:
+            race.mech_hit[0] = True
+            race.mech_dist_m[0] = 50_000.0
+            race.mech_stop_s[0] = 120.0
+        while not race.finished:
+            race.advance_to(race.sim_t + 1800.0)
+        if defekt:
+            assert not np.isnan(race.mech_at_wall[0]), "der Halt muss stattgefunden haben"
+            assert [e for e in race.events if e.type == "MECHANICAL"], "und gemeldet werden"
+        zeiten.append(float(race.finish_time_s[0]))
+
+    ohne, mit = zeiten
+    # Die Standzeit steckt drin, und der höhere Rollwiderstand danach
+    # legt noch etwas obendrauf.
+    assert mit > ohne + 120.0
+
+
+def test_der_verfolger_drueckt_nur_bei_kleinem_rueckstand():
+    abstand = np.array([0.0, CHASE_GAP_S / 2, CHASE_GAP_S, np.inf])
+    teams, riders = grosses_feld(4)
+    riders = [replace(r, chase=100.0) for r in riders]
+    race = LiveRace(kurzstrecke(), riders, teams, RaceConfig(name="Test", seed=1))
+    race.chase_gap[:, 0] = abstand
+    verfolg, _ = race._kopf_an_kopf(np.full(4, 1))
+
+    assert verfolg[0] == pytest.approx(1.0 + CHASE_MAX), "direkt dran: voll"
+    assert verfolg[1] == pytest.approx(1.0 + CHASE_MAX / 2)
+    assert verfolg[2] == pytest.approx(1.0), "genau an der Grenze nichts mehr"
+    assert verfolg[3] == pytest.approx(1.0), "und ohne Vordermann erst recht"
+
+    # Wer keinen Instinkt hat, merkt auch nichts.
+    race.chase_norm[:] = 0.0
+    assert race._kopf_an_kopf(np.full(4, 1))[0] == pytest.approx(np.ones(4))
+
+
+def test_der_teamgeist_greift_nur_bei_fuehrendem_teamkollegen():
+    teams, riders = grosses_feld(6)
+    race = LiveRace(kurzstrecke(), riders, teams, RaceConfig(name="Test", seed=1))
+    race.team_lead[:, 0] = [True, False, True, False, False, False]
+    _, team = race._kopf_an_kopf(np.full(6, 1))
+    assert team[0] == pytest.approx(1.0 + TEAM_SPIRIT_GAIN)
+    assert team[1] == pytest.approx(1.0)
+    # Vor der ersten Messstelle gilt es für niemanden.
+    assert race._kopf_an_kopf(np.zeros(6, dtype=int))[1] == pytest.approx(np.ones(6))
+
+
+def test_duelle_und_heimvorteil():
+    teams, riders = grosses_feld(60)
+    race = LiveRace(kurzstrecke(), riders, teams,
+                    RaceConfig(name="Test", seed=9, home_nations=("GER",)))
+
+    paare = [(i, int(race.rival_of[i])) for i in range(60) if race.rival_of[i] > i]
+    assert len(paare) == RIVAL_PAIRS
+    for a, b in paare:
+        assert race.rival_of[b] == a, "das Duell geht in beide Richtungen"
+        # „Ähnlich" heißt: in der Rangfolge der relativen FTP benachbart.
+        assert abs(riders[a].w_per_kg - riders[b].w_per_kg) < 0.2
+    beteiligt = np.count_nonzero(race.rival_of >= 0)
+    assert beteiligt == 2 * RIVAL_PAIRS, "sechs Fahrer, keiner doppelt"
+
+    # Andere Seeds, andere Paare.
+    anders = LiveRace(kurzstrecke(), riders, teams, RaceConfig(name="Test", seed=10))
+    assert not np.array_equal(race.rival_of, anders.rival_of)
+
+    # Alle Testfahrer sind GER — der Heimvorteil trifft damit alle.
+    assert np.all(race.home_bonus == HOME_ADVANTAGE)
+    ohne = LiveRace(kurzstrecke(), riders, teams, RaceConfig(name="Test", seed=9))
+    assert np.all(ohne.home_bonus == 0.0), "ohne Gastgebernation kein Vorteil"
+    assert np.all(race.base_power > ohne.base_power)
+
+
+def test_die_hoehenluft_kostet_erst_oben():
+    rampe = altitude_ramp(np.array([0.0, ALTITUDE_START_M, 1750.0, ALTITUDE_FULL_M, 4000.0]))
+    assert rampe[0] == 0.0 and rampe[1] == 0.0
+    assert rampe[2] == pytest.approx(0.5)
+    assert rampe[3] == pytest.approx(1.0) and rampe[4] == pytest.approx(1.0)
+
+    voll = altitude_power_factor(rampe, 0.0)
+    assert voll[0] == pytest.approx(1.0), "im Flachland kostet sie niemanden"
+    assert voll[3] == pytest.approx(1.0 - ALTITUDE_MAX)
+    # Einseitig: Bei voller Toleranz passiert nirgends etwas.
+    assert altitude_power_factor(rampe, 1.0) == pytest.approx(np.ones(5))
+
+
+def test_die_hoehentoleranz_wirkt_nur_im_hochgebirge():
+    teams, riders = grosses_feld(40)
+
+    def zeit(archetyp, hm, wert):
+        fahrer = replace(riders[0], altitude=wert)
+        race = LiveRace(kurzstrecke(archetyp, km=150, hm=hm), [fahrer], teams,
+                        RaceConfig(name="Test", seed=5, start_interval_s=0.0))
+        race.energy_table[:] = 0.0
+        race.hunger_roll[:] = 1.0
+        race.mech_hit[:] = False
+        while not race.finished:
+            race.advance_to(race.sim_t + 3600.0)
+        return float(race.finish_time_s[0])
+
+    flach_gut, flach_schlecht = zeit("flach", 300, 100.0), zeit("flach", 300, 0.0)
+    assert flach_schlecht == pytest.approx(flach_gut, rel=0.001)
+
+    berg_gut, berg_schlecht = zeit("hochgebirge", 5000, 100.0), zeit("hochgebirge", 5000, 0.0)
+    assert berg_schlecht > berg_gut, "oben muss die dünne Luft kosten"

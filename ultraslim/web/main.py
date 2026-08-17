@@ -252,6 +252,7 @@ def create_app(data_dir: str | Path = "data") -> FastAPI:
                     config=RaceConfig(
                         name=spec.name,
                         seed=season.race_seed(spec),
+                        home_nations=spec.home_nations,
                         season_points=punkte,
                     ),
                     store=store,
@@ -559,6 +560,8 @@ def create_app(data_dir: str | Path = "data") -> FastAPI:
                     "start_profile": round(r.start_profile),
                     "finish_kick": round(r.finish_kick),
                     "rhythm": round(r.rhythm),
+                    "chase": round(r.chase),
+                    "altitude": round(r.altitude),
                     "start_offset_s": round(float(offsets[k]), 1),
                 }
                 for k, r in enumerate(room.riders)
