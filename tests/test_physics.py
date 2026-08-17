@@ -263,3 +263,34 @@ def test_steigungsgeometrie():
     # tan α = 0,10  ->  sin α ≈ 0,0995
     assert sin[1] == pytest.approx(0.0995, abs=1e-3)
     assert (cos**2 + sin**2) == pytest.approx(np.ones(2))
+
+
+def test_der_aerodynamikwert_staffelt_den_luftwiderstand():
+    """Ein hoher Wert heißt kleinere Fläche, fünfzig heißt gar nichts."""
+    faktor = physics.aero_cda_factor(np.array([0.5, 0.0, -0.5]))
+    assert faktor[0] == pytest.approx(1.0 - physics.AERO_SPAN / 2)
+    assert faktor[1] == pytest.approx(1.0), "die Mitte kostet nichts"
+    assert faktor[2] == pytest.approx(1.0 + physics.AERO_SPAN / 2)
+    assert faktor[0] - faktor[2] == pytest.approx(-physics.AERO_SPAN)
+
+
+def test_die_aerodynamik_wirkt_im_flachen_am_staerksten():
+    """Der Luftwiderstand ist dort der Hauptgegner, wo es flach ist."""
+    def tempo(cda, grade, leistung):
+        v = np.array([8.0])
+        for _ in range(9000):
+            v = physics.integrate_step(
+                v, np.array([leistung]), np.array([grade]), np.array([78.0]),
+                np.array([cda]), physics.rolling_crr(v), np.array([1.2]), 1.0,
+                *physics.slope_trig(np.array([grade])),
+            )
+        return float(v[0])
+
+    gewinn = {}
+    for grade in (0.0, 0.06):
+        schnell = tempo(0.30 * physics.aero_cda_factor(0.5), grade, 200.0)
+        langsam = tempo(0.30 * physics.aero_cda_factor(-0.5), grade, 200.0)
+        gewinn[grade] = schnell / langsam - 1.0
+
+    assert gewinn[0.0] > 0.0 and gewinn[0.06] > 0.0
+    assert gewinn[0.0] > 3.0 * gewinn[0.06], "am Berg darf kaum etwas übrig bleiben"

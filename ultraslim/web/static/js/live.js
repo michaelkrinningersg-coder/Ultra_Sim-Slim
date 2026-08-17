@@ -63,6 +63,18 @@ const BOARD_COLUMNS = [
       + 'Anstiegs, sonst die des Anstiegs, in dem der Fahrer gerade steckt.',
   },
   {
+    key: 'aero',
+    label: 'Aero',
+    hint: 'Wie sauber der Fahrer auf dem Rad liegt, 0 bis 100. Wirkt auf den '
+      + 'Luftwiderstand und damit im Flachen am stärksten; 50 ist neutral.',
+  },
+  {
+    key: 'profil',
+    label: 'Profil',
+    hint: 'Kletterer (100) oder Rouleur (0). Der Kletterer drückt am Anstieg und '
+      + 'spart im Flachen, der Rouleur umgekehrt. Folgt überwiegend dem Gewicht.',
+  },
+  {
     key: 'verfall',
     label: 'Verfall',
     hint: 'Was der Ausdauerwert bis jetzt gemacht hat: Abweichung von der '
@@ -362,6 +374,8 @@ function raceLive(raceId) {
         // Angezeigt wird die Abweichung, nicht der Faktor: „+2,4 %" ist
         // die Aussage, „102,4 %" ist eine Rechenaufgabe.
         case 'verfall': return fadeText(row.fade_pct);
+        case 'aero': return row.aero;
+        case 'profil': return row.climb_profile;
         default: return '';
       }
     },

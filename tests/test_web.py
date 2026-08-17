@@ -834,3 +834,26 @@ def test_bergpunkte_landen_in_der_saisonwertung(client):
     seite = client.get("/season/s2026")
     assert seite.status_code == 200
     assert "Bergwertung" in seite.text
+
+
+def test_aero_und_profil_stehen_im_bild(token, laufendes_rennen):
+    """Beide Werte müssen im Fokus, in der Zeile und in der Startliste stehen."""
+    bild = laufendes_rennen.get(f"/api/playback/{token}/frame").json()
+    fokus = bild["focus"]
+    assert 0 <= fokus["aero"] <= 100
+    assert 0 <= fokus["climb_profile"] <= 100
+
+    zeile = bild["board"]["rows"][0]
+    assert 0 <= zeile["aero"] <= 100
+    assert 0 <= zeile["climb_profile"] <= 100
+
+    eintrag = laufendes_rennen.get(f"/api/race/{RACE_ID}/startlist").json()["entries"][0]
+    assert 0 <= eintrag["aero"] <= 100
+    assert 0 <= eintrag["climb_profile"] <= 100
+
+    for schluessel in ("aero", "profil"):
+        antwort = laufendes_rennen.post(
+            f"/api/playback/{token}/control", json={"action": "sort", "value": schluessel}
+        )
+        assert antwort.status_code == 200
+        assert laufendes_rennen.get(f"/api/playback/{token}/frame").json()["sort"] == schluessel

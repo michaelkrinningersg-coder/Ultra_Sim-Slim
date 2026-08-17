@@ -89,6 +89,21 @@ DESCENT_THROTTLE_MAX = 0.15
 DESCENT_BRAKE_LO = 0.02
 DESCENT_BRAKE_HI = 0.06
 
+#: Spanne des Aerodynamikwerts auf den Luftwiderstand: der Unterschied
+#: zwischen Wert 100 und Wert 0, symmetrisch um 50.
+#:
+#: Zehn Prozent heißt für einen Fahrer mit CdA 0,280 eine Spanne von
+#: 0,266 bis 0,294 — Straßenräder im Unterlenker liegen real zwischen
+#: etwa 0,26 und 0,32, der Wert bleibt also innerhalb dessen, was
+#: zwischen einem Fahrer, der vierzig Stunden sauber liegt, und einem,
+#: der sich ständig aufrichtet, tatsächlich vorkommt.
+#:
+#: Was er kostet, gemessen zwischen 100 und 0: 17 Minuten auf der
+#: flachen Ostsee-Nachtfahrt, 40 auf dem Alpenmarathon. Absolut wächst
+#: das mit der Renndauer, relativ fällt es mit den Höhenmetern — der
+#: Wert greift dort am schärfsten, wo sonst nichts differenziert.
+AERO_SPAN = 0.10
+
 #: Globaler Sicherheitsdeckel gegen Ausreißer in der Abfahrt.
 MAX_SPEED = 23.6  # 85 km/h
 #: Untergrenze für die Antriebsrechnung — P/v ist bei v → 0 singulär.
@@ -108,6 +123,16 @@ def frontal_area(height_cm: np.ndarray | float, weight_kg: np.ndarray | float) -
     h_m = np.asarray(height_cm, dtype=np.float64) / 100.0
     m = np.asarray(weight_kg, dtype=np.float64)
     return 0.0276 * h_m**0.725 * m**0.425
+
+
+def aero_cda_factor(aero_dev: np.ndarray | float) -> np.ndarray:
+    """Faktor auf den Luftwiderstand aus dem Aerodynamikwert.
+
+    ``aero_dev`` ist die Abweichung von der Mitte, −0,5 bis +0,5. Ein
+    hoher Wert heißt **kleinere** Fläche — daher das Minus. Bei null
+    kommt exakt 1,0 heraus.
+    """
+    return 1.0 - AERO_SPAN * np.asarray(aero_dev, dtype=np.float64)
 
 
 def position_k(grade: np.ndarray | float) -> np.ndarray:

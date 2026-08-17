@@ -50,7 +50,7 @@ JUMP_STEP_S = 60.0
 #: Sortierschlüssel, die das Board kennt.
 SORT_FIELDS = frozenset(
     {"zeit", "nr", "name", "team", "rueckstand", "km", "biscp", "trend", "tempo",
-     "leistung", "vam", "vorrang", "verfall"}
+     "leistung", "vam", "vorrang", "verfall", "aero", "profil"}
 )
 
 
@@ -590,6 +590,8 @@ class ViewSession:
                 "v_kmh": round(float(v[k]) * 3.6, 1),
                 "vam": None if np.isnan(vam[k]) else int(round(float(vam[k]))),
                 "fade_pct": None if np.isnan(fade[k]) else round(float(fade[k]) * 100.0, 1),
+                "aero": round(rider.aero),
+                "climb_profile": round(rider.climb_profile),
                 "power_w": int(round(float(live.power_w[k]))) if started[k] and not finished[k] else 0,
                 "state": (
                     STATE_FINISHED if finished[k] else (STATE_WAITING if waiting else 0)
@@ -788,6 +790,10 @@ class ViewSession:
                 return -row["v_kmh"]
             if key == "leistung":
                 return -row["power_w"]
+            if key == "aero":
+                return -row["aero"]
+            if key == "profil":
+                return -row["climb_profile"]
             if key == "verfall":
                 # Wer nicht fährt, hat keinen Verfall — und steht hinten.
                 return -(row["fade_pct"] if row["fade_pct"] is not None else -1e9)
@@ -860,6 +866,8 @@ class ViewSession:
             "w_per_kg": round(rider.w_per_kg, 2),
             "descent_skill": round(rider.descent_skill),
             "endurance": round(rider.endurance),
+            "aero": round(rider.aero),
+            "climb_profile": round(rider.climb_profile),
             # Der Verfall in Prozent der Startleistung: 103 heißt drei
             # Prozent über dem, womit er losgerollt ist. Gerechnet aus
             # seiner Eigenzeit — im Ziel also aus der Zielzeit.

@@ -8,16 +8,20 @@ import pytest
 from dataclasses import replace
 
 from ultraslim.core.engine import (
+    CLIMB_GRADE_FULL,
     DT,
     FADE_SPAN_MAX,
     FADE_SPAN_PER_10H,
+    PROFILE_SPAN,
     STATE_RIDING,
     STATE_WAITING,
     TICKS_PER_YIELD,
     LiveRace,
     RaceConfig,
+    climb_ramp,
     endurance_fade,
     grade_power_factor,
+    profile_power_factor,
     intensity_for_distance,
 )
 from ultraslim.core import physics
@@ -570,3 +574,60 @@ def test_der_verfall_ist_am_start_null_und_waechst():
     verfall = race.fade_at(5.0 * 3600.0)
     assert verfall[0] > 1.0 and verfall[1] < 1.0
     assert verfall[0] - 1.0 == pytest.approx(1.0 - verfall[1])
+
+
+# ----------------------------------------------------------------------
+# Aerodynamik und Kletterprofil
+# ----------------------------------------------------------------------
+def test_der_aerodynamikwert_steckt_in_der_flaeche():
+    """Er wird einmal eingerechnet und gilt dann überall."""
+    teams, riders = kleines_feld(3)
+    riders = [replace(r, aero=w) for r, w in zip(riders, (100.0, 50.0, 0.0))]
+    race = LiveRace(kurzstrecke(), riders, teams, RaceConfig(name="Test", seed=1))
+    basis = riders[1].frontal_area_m2
+    assert race.area[1] == pytest.approx(basis), "fünfzig ändert nichts"
+    assert race.area[0] < basis < race.area[2]
+    assert race.area[2] / race.area[0] == pytest.approx(
+        (1 + physics.AERO_SPAN / 2) / (1 - physics.AERO_SPAN / 2)
+    )
+
+
+def test_das_kletterprofil_verschiebt_nur():
+    """Am Anstieg dazu, im Flachen ab — und in der Mitte gar nichts."""
+    flach, mitte, berg = climb_ramp(np.array([0.0, CLIMB_GRADE_FULL / 2, CLIMB_GRADE_FULL]))
+    kletterer = profile_power_factor(np.array([flach, mitte, berg]), 0.5)
+    rouleur = profile_power_factor(np.array([flach, mitte, berg]), -0.5)
+
+    assert kletterer[0] < 1.0 < kletterer[2], "der Kletterer spart im Flachen"
+    assert rouleur[0] > 1.0 > rouleur[2], "der Rouleur genau umgekehrt"
+    assert kletterer[1] == pytest.approx(1.0), "bei halber Rampe hebt es sich auf"
+    assert kletterer[2] - 1.0 == pytest.approx(1.0 - kletterer[0])
+    assert kletterer[2] - rouleur[2] == pytest.approx(PROFILE_SPAN)
+
+    # Der neutrale Fahrer merkt von alledem nichts.
+    assert profile_power_factor(np.array([0.0, 0.5, 1.0]), 0.0) == pytest.approx(np.ones(3))
+
+
+def test_die_strecke_entscheidet_zwischen_kletterer_und_rouleur():
+    """Derselbe Wert, zwei Streckentypen, umgekehrtes Vorzeichen."""
+    teams, riders = kleines_feld(1)
+    ergebnis = {}
+    for archetyp, hm in (("flach", 300), ("hochgebirge", 6000)):
+        zeiten = []
+        for wert in (100.0, 0.0):
+            fahrer = replace(riders[0], climb_profile=wert)
+            race = LiveRace(
+                kurzstrecke(archetyp, km=200, hm=hm),
+                [fahrer],
+                teams,
+                RaceConfig(name="Test", seed=5, start_interval_s=0.0),
+            )
+            while not race.finished:
+                race.advance_to(race.sim_t + 3600.0)
+            zeiten.append(float(race.finish_time_s[0]))
+        ergebnis[archetyp] = zeiten
+
+    kletterer_flach, rouleur_flach = ergebnis["flach"]
+    kletterer_berg, rouleur_berg = ergebnis["hochgebirge"]
+    assert kletterer_flach > rouleur_flach, "im Flachen gewinnt der Rouleur"
+    assert kletterer_berg < rouleur_berg, "im Hochgebirge der Kletterer"

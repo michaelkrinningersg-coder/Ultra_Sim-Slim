@@ -119,6 +119,12 @@
             <div class="item"><span class="k"
                   title="0 bis 100, 50 ist neutral. Darüber wächst die Leistung mit der Fahrzeit, darunter fällt sie.">Ausdauer</span>
               <span class="v" x-text="focus.endurance"></span></div>
+            <div class="item"><span class="k"
+                  title="0 bis 100, 50 ist neutral. Wie sauber er auf dem Rad liegt — wirkt auf den Luftwiderstand, im Flachen am stärksten.">Aero</span>
+              <span class="v" x-text="focus.aero"></span></div>
+            <div class="item"><span class="k"
+                  title="Kletterer (100) oder Rouleur (0). Der Kletterer drückt am Anstieg und spart im Flachen, der Rouleur umgekehrt.">Profil</span>
+              <span class="v" x-text="`${focus.climb_profile} ${focus.climb_profile >= 65 ? 'Kletterer' : focus.climb_profile <= 35 ? 'Rouleur' : ''}`.trim()"></span></div>
             <div class="item"><span class="k" title="Zufallsfaktor auf die FTP, einmal je Rennen gezogen">Tagesform<span class="u">%</span></span>
               <span class="v" x-text="focus.form_pct"></span></div>
             <div class="item"><span class="k"

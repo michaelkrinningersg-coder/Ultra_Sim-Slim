@@ -1,8 +1,9 @@
 # UltraSim Slim
 
 Ultracycling-Simulator, schlanke Fassung. Ein Fahrer hat genau drei
-körperliche Eigenschaften — **FTP, Gewicht, Größe** — und zwei, die nicht
-aus dem Körper folgen: **Abfahrt** und **Ausdauer**. Eine Strecke ist ein
+körperliche Eigenschaften — **FTP, Gewicht, Größe** — und vier Zahlen von
+0 bis 100, die sagen, was er damit anfängt: **Abfahrt**, **Ausdauer**,
+**Aerodynamik** und das **Kletterprofil**. Eine Strecke ist ein
 zweidimensionales Höhenprofil, und alles andere folgt aus der Physik.
 
 Ein Rennen wird **nie vorberechnet**. Die Engine ist ein angehaltener
@@ -74,7 +75,7 @@ Fahrer vierzehn Prozent Zusatzmasse, beim schweren achteinhalb.
 
 ### Pacing
 
-Zielleistung = `FTP · IF · Tagesform · Verfall · Steigungsfaktor · Trittrauschen`.
+Zielleistung = `FTP · IF · Tagesform · Verfall · Steigungsfaktor · Profil · Trittrauschen`.
 
 - **IF** folgt der Renndistanz: 0,72 bei 300 km, 0,70 bei 400, 0,66 bei
   600, 0,64 bei 700, 0,62 bei 850, 0,60 bei 1000 km.
@@ -90,8 +91,7 @@ Zielleistung = `FTP · IF · Tagesform · Verfall · Steigungsfaktor · Trittrau
 
 ### Der Abfahrtswert
 
-Eine von zwei Eigenschaften, die nicht aus dem Körper folgen: eine Zahl
-von 0 bis 100 je Fahrer. **Bei 100 rollt er ungebremst aus, bei 0 nimmt er die
+Die erste der vier Zahlen, die nicht aus dem Körper folgen. **Bei 100 rollt er ungebremst aus, bei 0 nimmt er die
 volle Drosselung mit** — höchstens **15 %** Tempo, hinterlegt als
 `DESCENT_THROTTLE_MAX` in `core/physics.py`.
 
@@ -141,6 +141,78 @@ IF-Tabelle stehen: Das Feld als Ganzes fährt weiterhin dieselben Zeiten.
 Im Board zeigt die Spalte **Verfall**, was der Wert bis zu diesem Moment
 gemacht hat — die Abweichung von der Leistung, mit der der Fahrer
 losgerollt ist.
+
+### Der Aerodynamikwert
+
+Wie sauber ein Fahrer auf dem Rad liegt — die Zahl greift dort an, wo
+Luft der Hauptgegner ist:
+
+```
+CdA = A · k(Steigung) · (1 − AERO_SPAN · (Aero/100 − 0,5))
+```
+
+`AERO_SPAN = 0,10` in `core/physics.py`. Für den Beispielfahrer heißt das
+CdA 0,266 bis 0,294 statt 0,280 — Straßenräder im Unterlenker liegen real
+zwischen etwa 0,26 und 0,32, der Wert bleibt also innerhalb dessen, was
+zwischen einem Fahrer, der vierzig Stunden ruhig liegt, und einem, der
+sich ständig aufrichtet, tatsächlich vorkommt.
+
+Gemessen zwischen Aero 100 und Aero 0, ein Fahrer, sonst alles gleich:
+
+| Strecke | 100 | 50 | 0 | Spanne |
+|---|---|---|---|---|
+| Ostsee 300 km | 9,161 h | 9,303 | 9,442 | 16,9 min (3,03 %) |
+| Toskana 400 km | 13,458 h | 13,635 | 13,807 | 21,0 min (2,57 %) |
+| Karpaten 700 km | 27,430 h | 27,707 | 27,978 | 32,9 min (1,98 %) |
+| Alpen 1000 km | 47,224 h | 47,562 | 47,893 | 40,1 min (1,41 %) |
+
+**Absolut wächst der Effekt mit der Renndauer, relativ fällt er mit den
+Höhenmetern.** Je 100 km kostet die Spanne im Flachen 5,6 Minuten, im
+Hochgebirge 4,0. Auf der flachen Nachtfahrt ist Aerodynamik damit der
+wichtigste der vier Werte, im Hochgebirge der kleinste — genau die
+Arbeitsteilung, die gemeint ist: flach → Position, bergab →
+Abfahrtswert, lang → Ausdauer, bergauf → W/kg.
+
+### Kletterer und Rouleur
+
+Der einzige Wert, der **nicht** frei gewürfelt wird: Er folgt zu 60 %
+dem Gewicht (Rangplatz im Feld) und zu 40 % dem Zufall. Die Korrelation
+mit dem Gewicht liegt bei **−0,85** — das leichteste Viertel des Feldes
+kommt im Mittel auf Profil 71, das schwerste auf 28. Den leichten
+Rouleur gibt es weiterhin, nur selten.
+
+Der Wert **verschiebt** Leistung, er verschenkt keine:
+
+```
+Profil = 1 + PROFILE_SPAN · (Profil/100 − 0,5) · (2 · Rampe − 1)
+Rampe  = Steigung / 8 %, auf 0…1 begrenzt
+```
+
+`PROFILE_SPAN = 0,08` in `core/engine.py`. Ab 8 % Steigung bekommt der
+Kletterer die halbe Spanne dazu, im Flachen und bergab gibt er sie ab;
+der Angelpunkt liegt bei **4 % Steigung**, dort ist der Faktor für
+jeden genau 1,0.
+
+Damit entscheidet zum ersten Mal die **Strecke**, welcher Fahrertyp
+gewinnt (Kletterer 100 gegen Rouleur 0, positiv heißt: der Kletterer ist
+schneller):
+
+| Strecke | Höhenmeter je km | Kletterer |
+|---|---|---|
+| Ostsee 300 km | 3 | **−15,1 min** |
+| Toskana 400 km | 9 | −14,4 min |
+| Ardennen 600 km | 9 | −20,3 min |
+| Karpaten 700 km | 15 | +1,0 min |
+| Pyrenäen 850 km | 15 | +1,1 min |
+| Alpen 1000 km | 23 | **+81,3 min** |
+
+Über die ganze Saison bleiben dem Kletterer rund **34 Minuten** — drei
+Rennen gehen an den Rouleur, zwei sind ausgeglichen, und das
+Hochgebirge entscheidet die Gesamtwertung. Anders als bei Aerodynamik
+und Ausdauer ist der Wert also **nicht** von selbst zeitneutral: Die
+Empfindlichkeit von Leistung auf Zeit ist am Berg mehr als doppelt so
+hoch wie im Flachen. Das ist Absicht, nicht Nachlässigkeit — der Zweck
+des Werts ist, dass die Strecke entscheidet.
 
 Was es **nicht** gibt: W′-Bilanz, Verpflegung, Schlaf, Wetter, Wind,
 Defekte, Stürze, Taktik, Windschatten, Pausen — und keine
@@ -383,7 +455,7 @@ Kein Node, kein Build-Schritt. Alpine.js liegt als Datei bei.
 
 ```
 pip install -r requirements-dev.txt
-pytest -q                                   # 215 Tests
+pytest -q                                   # 223 Tests
 python -m ultraslim.app --no-browser        # Server ohne Browser
 ```
 

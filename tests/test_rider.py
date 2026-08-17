@@ -147,3 +147,32 @@ def test_derselbe_seed_liefert_denselben_pool():
     _, c = generate_pool(seed=4712)
     assert [r.to_dict() for r in a] == [r.to_dict() for r in b]
     assert [r.name for r in a] != [r.name for r in c]
+
+
+def test_aerowert_ist_verteilt_wie_die_anderen():
+    _, riders = generate_pool()
+    werte = np.array([r.aero for r in riders])
+    assert werte.min() >= 0.0 and werte.max() <= 100.0
+    assert werte.mean() == pytest.approx(50.0, abs=3.0)
+    assert werte.std() > 19.0
+    assert riders[0].aero_dev == pytest.approx(riders[0].aero / 100.0 - 0.5)
+
+
+def test_rouleure_sind_die_schweren_kletterer_die_leichten():
+    """Das Kletterprofil folgt dem Gewicht — aber nicht sklavisch."""
+    _, riders = generate_pool()
+    gewicht = np.array([r.weight_kg for r in riders])
+    profil = np.array([r.climb_profile for r in riders])
+
+    assert profil.min() >= 0.0 and profil.max() <= 100.0
+    korrelation = float(np.corrcoef(gewicht, profil)[0, 1])
+    assert korrelation < -0.7, "schwer heißt Rouleur"
+    assert korrelation > -0.95, "aber es ist keine Formel aus der Waage"
+
+    leicht = profil[gewicht < np.percentile(gewicht, 25)].mean()
+    schwer = profil[gewicht > np.percentile(gewicht, 75)].mean()
+    assert leicht > schwer + 30.0
+
+    # Den leichten Rouleur muss es weiterhin geben.
+    leichte_haelfte = profil[gewicht < np.median(gewicht)]
+    assert (leichte_haelfte < 40.0).any(), "sonst wäre der Wert nur das Gewicht"

@@ -86,6 +86,18 @@ FADE_SPAN_PER_10H = 0.06
 FADE_SPAN_MAX = 0.15
 FADE_REFERENCE_S = 10.0 * 3600.0
 
+#: Spanne des Kletterprofils auf die Zielleistung, zwischen Kletterer
+#: und Rouleur. Sie wirkt in beide Richtungen: Wer am Anstieg die halbe
+#: Spanne dazubekommt, gibt sie im Flachen ab.
+#:
+#: Anders als bei Aerodynamik und Ausdauer ist das **nicht** von selbst
+#: zeitneutral: Die Empfindlichkeit von Leistung auf Zeit ist am Berg
+#: mehr als doppelt so hoch wie im Flachen. Wer am Berg drückt, gewinnt
+#: unterm Strich also etwas — auf flachen Strecken kehrt sich das um.
+#: Genau das ist der Zweck: Die Strecke soll entscheiden, welcher Typ
+#: gewinnt.
+PROFILE_SPAN = 0.08
+
 #: Rauschen im Tritt. Zwei langsam wandernde Wellen, deren Summe
 #: höchstens zwei Prozent ausmacht — sichtbar in der Wattanzeige,
 #: praktisch wirkungslos auf die Endzeit.
@@ -188,6 +200,11 @@ def intensity_for_distance(distance_km: float) -> float:
     return float(np.interp(distance_km, xs, ys))
 
 
+def climb_ramp(grade: np.ndarray) -> np.ndarray:
+    """Wie sehr dieses Gelände ein Anstieg ist: null flach, eins ab 8 %."""
+    return np.clip(np.asarray(grade, dtype=np.float64) / CLIMB_GRADE_FULL, 0.0, 1.0)
+
+
 def grade_power_factor(grade: np.ndarray) -> np.ndarray:
     """Wie die Steigung die Zielleistung verschiebt.
 
@@ -195,9 +212,21 @@ def grade_power_factor(grade: np.ndarray) -> np.ndarray:
     ebenso linear auf 0,55 ab vier Prozent Gefälle.
     """
     g = np.asarray(grade, dtype=np.float64)
-    up = np.clip(g / CLIMB_GRADE_FULL, 0.0, 1.0)
     down = np.clip(-g / DESCENT_GRADE_FULL, 0.0, 1.0)
-    return 1.0 + CLIMB_POWER_GAIN * up - DESCENT_POWER_LOSS * down
+    return 1.0 + CLIMB_POWER_GAIN * climb_ramp(g) - DESCENT_POWER_LOSS * down
+
+
+def profile_power_factor(ramp: np.ndarray, profile_dev: np.ndarray) -> np.ndarray:
+    """Wie das Kletterprofil die Leistung zwischen Berg und Flach verschiebt.
+
+    ``profile_dev`` ist die Abweichung von der Mitte, −0,5 bis +0,5.
+    Positiv ist der Kletterer: Er drückt am Anstieg und spart im
+    Flachen, der Rouleur genau umgekehrt. Bei null kommt überall exakt
+    1,0 heraus — der Wert **verschiebt** Leistung, er verschenkt keine.
+    """
+    return 1.0 + PROFILE_SPAN * np.asarray(profile_dev, dtype=np.float64) * (
+        2.0 * np.asarray(ramp, dtype=np.float64) - 1.0
+    )
 
 
 def endurance_fade(own_time_s: np.ndarray, endurance_dev: np.ndarray) -> np.ndarray:
@@ -232,6 +261,9 @@ class _Terrain:
     power_factor: np.ndarray
     #: Wie stark die Bremse hier greifen darf — null bis eins.
     brake_ramp: np.ndarray
+    #: Wie sehr dieses Segment ein Anstieg ist — null im Flachen und
+    #: bergab, eins ab acht Prozent. Daran hängt das Kletterprofil.
+    climb_ramp: np.ndarray
 
     @classmethod
     def build(cls, route: Route) -> _Terrain:
@@ -248,6 +280,7 @@ class _Terrain:
             position_k=physics.position_k(grade),
             power_factor=grade_power_factor(grade),
             brake_ramp=physics.brake_ramp(grade),
+            climb_ramp=climb_ramp(grade),
         )
 
 
@@ -275,7 +308,14 @@ class LiveRace:
         # --- Fahrerkonstanten -----------------------------------------
         self.ftp = np.array([r.ftp_w for r in self.riders], dtype=np.float64)
         self.mass = np.array([r.system_mass_kg for r in self.riders], dtype=np.float64)
-        self.area = np.array([r.frontal_area_m2 for r in self.riders], dtype=np.float64)
+        #: Frontalfläche samt Aerodynamikwert. Der Wert steckt hier
+        #: fest drin, statt im Tick jedes Mal aufgeschlagen zu werden:
+        #: Er ändert sich während des Rennens nicht, und so gilt er
+        #: überall, wo mit der Fläche gerechnet wird — auch in der
+        #: Schätzung des Zeitstrahls.
+        self.area = np.array(
+            [r.frontal_area_m2 for r in self.riders], dtype=np.float64
+        ) * physics.aero_cda_factor(np.array([r.aero_dev for r in self.riders]))
 
         #: Der Abfahrtswert, schon in die Form gebracht, die der Tick
         #: braucht: ``f = 1 − brems_coeff · Rampe``. Bei Wert 100 ist der
@@ -286,6 +326,9 @@ class LiveRace:
 
         #: Der Ausdauerwert als Abweichung von der Mitte, −0,5 bis +0,5.
         self.endurance_dev = np.array([r.endurance_dev for r in self.riders], dtype=np.float64)
+        #: Ebenso das Kletterprofil: positiv der Kletterer, negativ der
+        #: Rouleur.
+        self.profile_dev = np.array([r.climb_profile_dev for r in self.riders], dtype=np.float64)
 
         intensity = self.config.intensity_factor
         if intensity is None:
@@ -443,7 +486,10 @@ class LiveRace:
         # Der Verfall zählt in **Eigenzeit**, nicht in Rennuhr: Wer erst
         # seit einer Stunde fährt, ist eine Stunde alt, auch wenn die
         # Übertragung seit dreißig läuft.
-        power = self.base_power * self.fade_at(t) * terrain.power_factor[idx] * noise
+        # Das Kletterprofil verschiebt dieselbe Leistung zwischen Berg
+        # und Flach — es kommt keine dazu.
+        profil = profile_power_factor(terrain.climb_ramp[idx], self.profile_dev)
+        power = self.base_power * self.fade_at(t) * terrain.power_factor[idx] * profil * noise
         power *= physics.downhill_power_taper(self.v_ms)
         power = np.where(active, power, 0.0)
 
@@ -765,11 +811,19 @@ class LiveRace:
             # Ausdauer, die es geben kann, nicht mit der des schwächsten
             # Fahrers.
             verfall = 1.0 - FADE_SPAN_MAX / 2.0
+            # Und beim Kletterprofil das, was an dieser Stelle jeweils
+            # am langsamsten ist: am Anstieg der Rouleur, im Flachen der
+            # Kletterer. Kein einzelner Fahrer ist beides — der
+            # Zeitstrahl soll aber auch keinen von beiden abschneiden.
+            profil = profile_power_factor(terrain.climb_ramp, -0.5)
+            profil = np.minimum(profil, profile_power_factor(terrain.climb_ramp, 0.5))
+            # Ebenso die schlechteste Position im Feld statt der des
+            # schwächsten Fahrers.
             v = physics.steady_state_speed(
-                self.base_power[weakest] * verfall * terrain.power_factor,
+                self.base_power[weakest] * verfall * profil * terrain.power_factor,
                 terrain.grade,
                 self.mass[weakest],
-                self.area[weakest] * terrain.position_k / (f_brems * f_brems),
+                float(self.area.max()) * terrain.position_k / (f_brems * f_brems),
                 physics.CRR_ASPHALT,
                 terrain.rho,
             )
@@ -853,6 +907,9 @@ __all__ = [
     "intensity_for_distance",
     "grade_power_factor",
     "endurance_fade",
+    "climb_ramp",
+    "profile_power_factor",
+    "PROFILE_SPAN",
     "FADE_SPAN_PER_10H",
     "FADE_SPAN_MAX",
     "climb_points_for",

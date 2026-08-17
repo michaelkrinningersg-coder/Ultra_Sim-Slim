@@ -1,9 +1,10 @@
 """Fahrer, Teams und der Generator für den Pool.
 
 Ein Fahrer hat in dieser Fassung genau drei körperliche Eigenschaften:
-**FTP, Gewicht, Größe**. Was er damit anfängt, sagen zwei Zahlen, die
-nicht aus der Physik folgen: der **Abfahrtswert** und die **Ausdauer**.
-Alles andere — Magen, Schlaf, Charakter — ist bewusst nicht da.
+**FTP, Gewicht, Größe**. Was er damit anfängt, sagen vier Zahlen von 0
+bis 100: **Abfahrt**, **Ausdauer**, **Aerodynamik** und das
+**Kletterprofil**. Alles andere — Magen, Schlaf, Charakter — ist
+bewusst nicht da.
 """
 
 from __future__ import annotations
@@ -69,6 +70,21 @@ DESCENT_BETA = 2.0
 #: Lesart: 50 ist die Mitte, 0 und 100 sind selten, aber sie kommen vor.
 ENDURANCE_BETA = 2.0
 
+#: Ebenso für den Aerodynamikwert.
+AERO_BETA = 2.0
+
+#: Das Kletterprofil ist der einzige Wert, der **nicht** frei gewürfelt
+#: wird: Rouleure sind eher schwere Fahrer, Kletterer eher leichte. Der
+#: Anteil sagt, wie stark das Gewicht ihn bestimmt — der Rest ist Zufall,
+#: damit es den leichten Rouleur weiterhin geben kann.
+#:
+#: Bei 0,6 liegt die Korrelation mit dem Gewicht bei −0,85: Das
+#: leichteste Viertel des Feldes kommt im Mittel auf Profil 71, das
+#: schwerste auf 28 — deutlich sichtbar, aber kein Wert, den man aus
+#: der Waage ablesen könnte.
+CLIMB_PROFILE_WEIGHT_SHARE = 0.6
+CLIMB_PROFILE_BETA = 2.0
+
 
 @dataclass(frozen=True)
 class Team:
@@ -100,6 +116,15 @@ class Rider:
     #: fällt sie — je länger das Rennen, desto weiter geht die Schere
     #: auf.
     endurance: float = 50.0
+    #: Wie sauber er auf dem Rad liegt, 0 bis 100. Wirkt auf den
+    #: Luftwiderstand und damit überall dort, wo Luft der Hauptgegner
+    #: ist — im Flachen also am stärksten. 50 ist neutral.
+    aero: float = 50.0
+    #: Kletterer oder Rouleur, 0 bis 100. Bei 100 drückt er am Anstieg
+    #: und spart im Flachen, bei 0 umgekehrt; 50 fährt beides gleich.
+    #: Der Wert folgt überwiegend dem Gewicht — Rouleure sind eher
+    #: schwere Fahrer.
+    climb_profile: float = 50.0
 
     # ------------------------------------------------------------------
     @property
@@ -116,6 +141,20 @@ class Rider:
         genau eins.
         """
         return float(np.clip(self.endurance / 100.0, 0.0, 1.0)) - 0.5
+
+    @property
+    def aero_dev(self) -> float:
+        """Der Aerodynamikwert als Abweichung von der Mitte."""
+        return float(np.clip(self.aero / 100.0, 0.0, 1.0)) - 0.5
+
+    @property
+    def climb_profile_dev(self) -> float:
+        """Das Kletterprofil als Abweichung von der Mitte.
+
+        Positiv ist der Kletterer, negativ der Rouleur — und bei null
+        verhält sich der Fahrer wie vor der Einführung des Werts.
+        """
+        return float(np.clip(self.climb_profile / 100.0, 0.0, 1.0)) - 0.5
 
     @property
     def frontal_area_m2(self) -> float:
@@ -142,6 +181,8 @@ class Rider:
             "height_cm": round(self.height_cm, 1),
             "descent_skill": round(self.descent_skill, 1),
             "endurance": round(self.endurance, 1),
+            "aero": round(self.aero, 1),
+            "climb_profile": round(self.climb_profile, 1),
         }
 
 
@@ -216,8 +257,26 @@ def generate_pool(seed: int = 20260101) -> tuple[list[Team], list[Rider]]:
     # Schleife hätte den Zufallsstrom verschoben — und damit Namen,
     # Körpermaße und FTP aller dreihundert Fahrer ausgetauscht, obwohl
     # nur eine Eigenschaft dazugekommen ist.
-    ausdauer = rng.beta(ENDURANCE_BETA, ENDURANCE_BETA, len(riders)) * 100.0
-    riders = [replace(r, endurance=float(a)) for r, a in zip(riders, ausdauer)]
+    n = len(riders)
+    ausdauer = rng.beta(ENDURANCE_BETA, ENDURANCE_BETA, n) * 100.0
+    aero = rng.beta(AERO_BETA, AERO_BETA, n) * 100.0
+
+    # Das Kletterprofil: überwiegend das Gewicht, der Rest Zufall. Als
+    # Rang statt als Kilogramm, damit der Wert die volle Skala von 0 bis
+    # 100 nutzt, egal wie eng das Feld beieinanderliegt — und invertiert,
+    # weil der leichteste Fahrer der Kletterer ist.
+    gewicht = np.array([r.weight_kg for r in riders])
+    rang = np.argsort(np.argsort(gewicht)) / (n - 1)
+    wuerfel = rng.beta(CLIMB_PROFILE_BETA, CLIMB_PROFILE_BETA, n)
+    profil = 100.0 * (
+        CLIMB_PROFILE_WEIGHT_SHARE * (1.0 - rang)
+        + (1.0 - CLIMB_PROFILE_WEIGHT_SHARE) * wuerfel
+    )
+
+    riders = [
+        replace(r, endurance=float(e), aero=float(a), climb_profile=float(p))
+        for r, e, a, p in zip(riders, ausdauer, aero, profil)
+    ]
     return teams, riders
 
 
@@ -250,4 +309,7 @@ __all__ = [
     "RIDERS_PER_TEAM",
     "DESCENT_BETA",
     "ENDURANCE_BETA",
+    "AERO_BETA",
+    "CLIMB_PROFILE_BETA",
+    "CLIMB_PROFILE_WEIGHT_SHARE",
 ]
