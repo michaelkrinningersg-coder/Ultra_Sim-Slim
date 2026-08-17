@@ -5,6 +5,7 @@ from __future__ import annotations
 import pytest
 from fastapi.testclient import TestClient
 
+from ultraslim.core.engine import STATE_FINISHED, STATE_WAITING
 from ultraslim.core.season import CALENDAR
 from ultraslim.web.main import create_app
 
@@ -363,6 +364,55 @@ def test_vorheriger_rang_nur_fuer_die_messstelle_davor(token, laufendes_rennen):
     assert raenge, "an einer späteren Messstelle muss es sie geben"
     assert len(set(raenge)) == len(raenge), "jeder Platz nur einmal vergeben"
     assert min(raenge) == 1
+
+
+def test_der_verfall_steht_in_der_telemetrie(token, laufendes_rennen):
+    """Ausdauer und Verfall müssen im Bild ankommen, nicht nur im Modell."""
+    laufendes_rennen.post(f"/api/playback/{token}/control", json={"action": "seek", "value": 12 * 3600})
+    bild = laufendes_rennen.get(f"/api/playback/{token}/frame").json()
+
+    fokus = bild["focus"]
+    assert 0 <= fokus["endurance"] <= 100
+    assert fokus["fade_pct"] is not None
+
+    zeilen = bild["board"]["rows"]
+    unterwegs = [z for z in zeilen if z["state"] == 0]
+    assert unterwegs, "Testaufbau: es muss Fahrer auf der Strecke geben"
+    for zeile in unterwegs:
+        assert zeile["fade_pct"] is not None
+        assert 85.0 < zeile["fade_pct"] < 115.0, "der Deckel begrenzt den Verfall"
+    # Wer noch wartet, hat keinen; wer im Ziel ist, behält den, den er
+    # bei seiner Zielzeit hatte — er steigt nicht weiter.
+    for zeile in zeilen:
+        if zeile["state"] == STATE_WAITING:
+            assert zeile["fade_pct"] is None
+
+    laufendes_rennen.post(f"/api/playback/{token}/control", json={"action": "seek", "value": 20 * 3600})
+    spaeter = laufendes_rennen.get(f"/api/playback/{token}/frame").json()
+    vorher = {z["entry_id"]: z for z in zeilen if z["state"] == STATE_FINISHED}
+    verglichen = 0
+    for zeile in spaeter["board"]["rows"]:
+        alt = vorher.get(zeile["entry_id"])
+        if alt is None:
+            continue
+        assert zeile["fade_pct"] == alt["fade_pct"], "im Ziel steht der Verfall still"
+        verglichen += 1
+    assert verglichen, "Testaufbau: es muss Fahrer im Ziel geben"
+
+    # Und danach sortieren lässt sich auch.
+    antwort = laufendes_rennen.post(
+        f"/api/playback/{token}/control", json={"action": "sort", "value": "verfall"}
+    )
+    assert antwort.status_code == 200
+    sortiert = laufendes_rennen.get(f"/api/playback/{token}/frame").json()
+    assert sortiert["sort"] == "verfall"
+
+
+def test_startliste_nennt_beide_zusatzwerte(laufendes_rennen):
+    daten = laufendes_rennen.get(f"/api/race/{RACE_ID}/startlist").json()
+    erster = daten["entries"][0]
+    assert 0 <= erster["descent_skill"] <= 100
+    assert 0 <= erster["endurance"] <= 100
 
 
 def test_kopfzeile_zeigt_die_beste_gefahrene_zeit(token, laufendes_rennen):

@@ -5,13 +5,18 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
+from dataclasses import replace
+
 from ultraslim.core.engine import (
     DT,
+    FADE_SPAN_MAX,
+    FADE_SPAN_PER_10H,
     STATE_RIDING,
     STATE_WAITING,
     TICKS_PER_YIELD,
     LiveRace,
     RaceConfig,
+    endurance_fade,
     grade_power_factor,
     intensity_for_distance,
 )
@@ -492,3 +497,76 @@ def test_auffahrtsdauer_wird_lesbar_geschrieben():
     assert _dauer_text(3599) == "59:59"
     assert _dauer_text(3600) == "1:00:00"
     assert _dauer_text(7360) == "2:02:40"
+
+
+# ----------------------------------------------------------------------
+# Ausdauer
+# ----------------------------------------------------------------------
+def test_ausdauer_fuenfzig_kostet_nichts():
+    """Die Mitte ist wirklich neutral, in jeder Renndauer.
+
+    Sonst verschöbe der neue Wert die Eichung der IF-Tabelle und damit
+    jede bisher gefahrene Zielzeit.
+    """
+    for stunden in (0.0, 1.0, 10.0, 40.0):
+        assert float(endurance_fade(np.array([stunden * 3600]), np.zeros(1))[0]) == pytest.approx(1.0)
+
+
+def test_die_schere_geht_mit_der_fahrzeit_auf():
+    """Nach zehn Stunden genau die hinterlegte Spanne, dann der Deckel."""
+    zehn = np.full(2, 10.0 * 3600.0)
+    hoch, tief = endurance_fade(zehn, np.array([0.5, -0.5]))
+    assert hoch - tief == pytest.approx(FADE_SPAN_PER_10H)
+    assert hoch == pytest.approx(1.0 + FADE_SPAN_PER_10H / 2)
+
+    # Nach einer Stunde ein Zehntel davon — der Verlauf ist linear.
+    eine = np.full(1, 3600.0)
+    assert float(endurance_fade(eine, np.array([0.5])[:1])[0]) == pytest.approx(
+        1.0 + FADE_SPAN_PER_10H / 20
+    )
+
+    # Und irgendwann ist Schluss: Der Deckel begrenzt die Spanne.
+    lang = np.full(2, 100.0 * 3600.0)
+    hoch, tief = endurance_fade(lang, np.array([0.5, -0.5]))
+    assert hoch - tief == pytest.approx(FADE_SPAN_MAX)
+
+
+def test_ausdauer_verschiebt_die_leistung_im_rennen():
+    """Im Rennen zählt sie — und zwar in der richtigen Richtung."""
+    teams, riders = kleines_feld(1)
+    zeiten = []
+    for wert in (100.0, 50.0, 0.0):
+        fahrer = replace(riders[0], endurance=wert)
+        race = LiveRace(
+            kurzstrecke("wellig", km=200, hm=2000),
+            [fahrer],
+            teams,
+            RaceConfig(name="Test", seed=5, start_interval_s=0.0),
+        )
+        while not race.finished:
+            race.advance_to(race.sim_t + 3600.0)
+        zeiten.append(float(race.finish_time_s[0]))
+
+    schnell, mitte, langsam = zeiten
+    assert schnell < mitte < langsam, "mehr Ausdauer muss schneller sein"
+    # Symmetrisch um die Mitte: Der Gewinn oben und der Verlust unten
+    # sind derselbe Betrag — bis auf das, was die Physik krümmt.
+    assert (mitte - schnell) == pytest.approx(langsam - mitte, rel=0.15)
+
+
+def test_der_verfall_ist_am_start_null_und_waechst():
+    """Was die Anzeige zeigt, kommt aus derselben Funktion wie der Tick."""
+    teams, riders = kleines_feld(2)
+    riders = [replace(riders[0], endurance=100.0), replace(riders[1], endurance=0.0)]
+    race = LiveRace(
+        kurzstrecke("flach", km=300, hm=500),
+        riders,
+        teams,
+        RaceConfig(name="Test", seed=5, start_interval_s=0.0),
+    )
+    assert race.fade_at(0.0) == pytest.approx(np.ones(2))
+
+    race.advance_to(5.0 * 3600.0)
+    verfall = race.fade_at(5.0 * 3600.0)
+    assert verfall[0] > 1.0 and verfall[1] < 1.0
+    assert verfall[0] - 1.0 == pytest.approx(1.0 - verfall[1])

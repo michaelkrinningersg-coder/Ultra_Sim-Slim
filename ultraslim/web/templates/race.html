@@ -116,8 +116,15 @@
             <div class="item"><span class="k"
                   title="0 bis 100. Bei 100 rollt er bergab ungebremst aus, bei 0 nimmt er die volle Drosselung mit.">Abfahrt</span>
               <span class="v" x-text="focus.descent_skill"></span></div>
+            <div class="item"><span class="k"
+                  title="0 bis 100, 50 ist neutral. Darüber wächst die Leistung mit der Fahrzeit, darunter fällt sie.">Ausdauer</span>
+              <span class="v" x-text="focus.endurance"></span></div>
             <div class="item"><span class="k" title="Zufallsfaktor auf die FTP, einmal je Rennen gezogen">Tagesform<span class="u">%</span></span>
               <span class="v" x-text="focus.form_pct"></span></div>
+            <div class="item"><span class="k"
+                  title="Was der Ausdauerwert bis jetzt gemacht hat: Abweichung von der Leistung, mit der er losgerollt ist.">Verfall</span>
+              <span class="v" :class="focus.fade_pct > 100.05 ? 'good' : focus.fade_pct < 99.95 ? 'bad' : ''"
+                    x-text="fadeText(focus.fade_pct)"></span></div>
           </div>
         </div>
       </template>

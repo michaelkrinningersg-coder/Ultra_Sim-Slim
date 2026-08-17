@@ -23,6 +23,7 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
+from ..core import engine
 from ..core.engine import STATE_FINISHED, STATE_WAITING, LiveRace, RaceConfig
 from ..core.rider import Rider, Team
 from ..core.route import Route
@@ -49,7 +50,7 @@ JUMP_STEP_S = 60.0
 #: Sortierschlüssel, die das Board kennt.
 SORT_FIELDS = frozenset(
     {"zeit", "nr", "name", "team", "rueckstand", "km", "biscp", "trend", "tempo",
-     "leistung", "vam", "vorrang"}
+     "leistung", "vam", "vorrang", "verfall"}
 )
 
 
@@ -559,6 +560,11 @@ class ViewSession:
                 drin = aktuell >= 0
                 vam[drin] = alle_vam[np.nonzero(drin)[0], aktuell[drin]]
 
+        # Der Verfall: Anteil der Startleistung, den ein Fahrer gerade
+        # tritt. Im Ziel bleibt er stehen — die Uhr des Zuschauers läuft
+        # weiter, der Fahrer nicht. Wer noch wartet, hat keinen.
+        fade = np.where(started, self._verfall(t, finished), np.nan)
+
         rows: dict[int, dict] = {}
         for k, rider in enumerate(room.riders):
             # Ohne Zeit in dieser Wertung: kein Wert, kein Rückstand, und
@@ -583,6 +589,7 @@ class ViewSession:
                 "prev_rank": int(vorrang[k]) or None,
                 "v_kmh": round(float(v[k]) * 3.6, 1),
                 "vam": None if np.isnan(vam[k]) else int(round(float(vam[k]))),
+                "fade_pct": None if np.isnan(fade[k]) else round(float(fade[k]) * 100.0, 1),
                 "power_w": int(round(float(live.power_w[k]))) if started[k] and not finished[k] else 0,
                 "state": (
                     STATE_FINISHED if finished[k] else (STATE_WAITING if waiting else 0)
@@ -590,6 +597,17 @@ class ViewSession:
                 "rank": 0,
             }
         return rows
+
+    def _verfall(self, t: float, finished) -> np.ndarray:
+        """Der Verfallsfaktor, im Ziel eingefroren.
+
+        Nach dem Zieleinlauf zählt die Eigenzeit nicht weiter — sie ist
+        die Zielzeit. Ohne das stiege der angezeigte Verfall eines
+        Fahrers, der längst abgestiegen ist, noch stundenlang an.
+        """
+        live = self.room.live
+        eigen = np.where(finished, np.nan_to_num(live.finish_time_s), live.own_time(t))
+        return engine.endurance_fade(eigen, live.endurance_dev)
 
     def _climb_payload(self, t: float) -> dict | None:
         """Der gewählte Anstieg samt Durchgangszahl."""
@@ -770,6 +788,9 @@ class ViewSession:
                 return -row["v_kmh"]
             if key == "leistung":
                 return -row["power_w"]
+            if key == "verfall":
+                # Wer nicht fährt, hat keinen Verfall — und steht hinten.
+                return -(row["fade_pct"] if row["fade_pct"] is not None else -1e9)
             if key == "vam":
                 # Ohne Anstieg keine Steiggeschwindigkeit — die stehen
                 # hinten, nicht mit einer erfundenen Null vorn.
@@ -800,7 +821,9 @@ class ViewSession:
         room = self.room
         rider = room.riders[i]
         live = room.live
-        own = float(live.own_time(t)[i])
+        # Was auf seiner Uhr steht — im Ziel die Zielzeit, die steht
+        # still, während die Rennuhr weiterläuft.
+        own = float(live.finish_time_s[i]) if finished[i] else float(live.own_time(t)[i])
 
         # Steckt er in einem Anstieg? Dann zählt, wie weit noch bis oben
         # und wie schnell er steigt — die beiden Zahlen, über die am Berg
@@ -836,6 +859,15 @@ class ViewSession:
             "height_cm": round(rider.height_cm),
             "w_per_kg": round(rider.w_per_kg, 2),
             "descent_skill": round(rider.descent_skill),
+            "endurance": round(rider.endurance),
+            # Der Verfall in Prozent der Startleistung: 103 heißt drei
+            # Prozent über dem, womit er losgerollt ist. Gerechnet aus
+            # seiner Eigenzeit — im Ziel also aus der Zielzeit.
+            "fade_pct": round(
+                float(engine.endurance_fade(np.array([own]), live.endurance_dev[i : i + 1])[0])
+                * 100.0,
+                1,
+            ),
             "dist_m": round(float(dist[i]), 1),
             "remaining_m": round(max(room.route.distance_m - float(dist[i]), 0.0), 1),
             "v_kmh": round(float(v[i]) * 3.6, 1),
@@ -847,7 +879,7 @@ class ViewSession:
             ),
             "started": bool(started[i]),
             "start_offset_s": round(float(live.start_offset_s[i]), 1),
-            "own_time_s": round(float(live.finish_time_s[i]) if finished[i] else own, 1),
+            "own_time_s": round(own, 1),
         }
 
 

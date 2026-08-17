@@ -1,16 +1,15 @@
 """Fahrer, Teams und der Generator für den Pool.
 
-Ein Fahrer hat in dieser Fassung genau drei Eigenschaften: **FTP,
-Gewicht, Größe**. Alles andere — Form, Ermüdung, Magen, Schlaf,
-Charakter — ist bewusst nicht da. Was ein Fahrer kann, steckt
-vollständig in diesen drei Zahlen und in dem, was die Physik daraus
-macht.
+Ein Fahrer hat in dieser Fassung genau drei körperliche Eigenschaften:
+**FTP, Gewicht, Größe**. Was er damit anfängt, sagen zwei Zahlen, die
+nicht aus der Physik folgen: der **Abfahrtswert** und die **Ausdauer**.
+Alles andere — Magen, Schlaf, Charakter — ist bewusst nicht da.
 """
 
 from __future__ import annotations
 
 import colorsys
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 import numpy as np
 
@@ -65,6 +64,11 @@ TEAM_OFFSET_SPAN = 0.35
 #: flacher; bei 1,0 wäre sie gleichverteilt.
 DESCENT_BETA = 2.0
 
+#: Form der Verteilung des Ausdauerwerts. Dieselbe Kurve wie beim
+#: Abfahrtswert, aus denselben Gründen — und damit auch dieselbe
+#: Lesart: 50 ist die Mitte, 0 und 100 sind selten, aber sie kommen vor.
+ENDURANCE_BETA = 2.0
+
 
 @dataclass(frozen=True)
 class Team:
@@ -90,12 +94,28 @@ class Rider:
     #: die nicht aus der Physik folgt — bei 100 rollt er ungebremst aus,
     #: bei 0 nimmt er die maximale Drosselung mit.
     descent_skill: float = 100.0
+    #: Wie gut er die Leistung über die Stunden hält, 0 bis 100.
+    #: **Fünfzig ist neutral**: Dort verläuft das Rennen wie ohne diesen
+    #: Wert. Darüber wächst die Leistung mit der Fahrzeit, darunter
+    #: fällt sie — je länger das Rennen, desto weiter geht die Schere
+    #: auf.
+    endurance: float = 50.0
 
     # ------------------------------------------------------------------
     @property
     def descent_norm(self) -> float:
         """Der Abfahrtswert auf 0 bis 1, wie ihn die Physik erwartet."""
         return float(np.clip(self.descent_skill / 100.0, 0.0, 1.0))
+
+    @property
+    def endurance_dev(self) -> float:
+        """Die Abweichung von der Mitte, −0,5 bis +0,5.
+
+        In dieser Form geht der Wert in den Verfall ein: Bei fünfzig ist
+        er null, und dann ist der Faktor unabhängig von der Fahrzeit
+        genau eins.
+        """
+        return float(np.clip(self.endurance / 100.0, 0.0, 1.0)) - 0.5
 
     @property
     def frontal_area_m2(self) -> float:
@@ -121,6 +141,7 @@ class Rider:
             "weight_kg": round(self.weight_kg, 1),
             "height_cm": round(self.height_cm, 1),
             "descent_skill": round(self.descent_skill, 1),
+            "endurance": round(self.endurance, 1),
         }
 
 
@@ -189,6 +210,14 @@ def generate_pool(seed: int = 20260101) -> tuple[list[Team], list[Rider]]:
                 )
             )
             rid += 1
+
+    # Der Ausdauerwert wird **nach** allen anderen Ziehungen gewürfelt,
+    # in einem Zug für das ganze Feld. Eine Ziehung mitten in der
+    # Schleife hätte den Zufallsstrom verschoben — und damit Namen,
+    # Körpermaße und FTP aller dreihundert Fahrer ausgetauscht, obwohl
+    # nur eine Eigenschaft dazugekommen ist.
+    ausdauer = rng.beta(ENDURANCE_BETA, ENDURANCE_BETA, len(riders)) * 100.0
+    riders = [replace(r, endurance=float(a)) for r, a in zip(riders, ausdauer)]
     return teams, riders
 
 
@@ -220,4 +249,5 @@ __all__ = [
     "N_TEAMS",
     "RIDERS_PER_TEAM",
     "DESCENT_BETA",
+    "ENDURANCE_BETA",
 ]

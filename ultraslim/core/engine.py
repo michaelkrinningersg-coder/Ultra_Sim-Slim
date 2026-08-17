@@ -68,6 +68,24 @@ DESCENT_POWER_LOSS = 0.45   # −45 %, also 0,55×
 FORM_SD = 0.04
 FORM_RANGE = (0.88, 1.12)
 
+#: Der Ausdauerwert, in Zahlen. Er verschiebt nicht die Leistung, er
+#: verschiebt ihren **Verlauf**: Je länger ein Fahrer unterwegs ist,
+#: desto weiter geht die Schere zwischen den Ausdauernden und den
+#: Verfallenden auf.
+#:
+#: ``FADE_SPAN_PER_10H`` ist die Spanne zwischen Ausdauer 0 und 100 nach
+#: zehn Stunden Eigenzeit, ``FADE_SPAN_MAX`` der Deckel darauf — ohne
+#: ihn triebe ein Vierzig-Stunden-Rennen den Effekt ins Absurde. Ein
+#: Fahrer mit 50 bleibt in jeder Renndauer bei genau 1,0; die Verteilung
+#: ist symmetrisch um 50, damit die IF-Tabelle geeicht bleibt.
+#:
+#: Was die beiden Zahlen kosten, in Endzeitunterschied zwischen 0 und
+#: 100: rund 6 Minuten auf der flachen Nachtfahrt, gut eine Stunde auf
+#: der Karpaten-Traverse, gut zwei auf dem Alpenmarathon.
+FADE_SPAN_PER_10H = 0.06
+FADE_SPAN_MAX = 0.15
+FADE_REFERENCE_S = 10.0 * 3600.0
+
 #: Rauschen im Tritt. Zwei langsam wandernde Wellen, deren Summe
 #: höchstens zwei Prozent ausmacht — sichtbar in der Wattanzeige,
 #: praktisch wirkungslos auf die Endzeit.
@@ -182,6 +200,20 @@ def grade_power_factor(grade: np.ndarray) -> np.ndarray:
     return 1.0 + CLIMB_POWER_GAIN * up - DESCENT_POWER_LOSS * down
 
 
+def endurance_fade(own_time_s: np.ndarray, endurance_dev: np.ndarray) -> np.ndarray:
+    """Faktor auf die Zielleistung aus Ausdauerwert und Fahrzeit.
+
+    ``endurance_dev`` ist die Abweichung von der Mitte, −0,5 bis +0,5.
+    Bei null kommt unabhängig von der Zeit exakt 1,0 heraus — der Wert
+    kostet nichts, solange ihn niemand hat.
+    """
+    spanne = np.minimum(
+        FADE_SPAN_PER_10H * np.asarray(own_time_s, dtype=np.float64) / FADE_REFERENCE_S,
+        FADE_SPAN_MAX,
+    )
+    return 1.0 + spanne * np.asarray(endurance_dev, dtype=np.float64)
+
+
 # ----------------------------------------------------------------------
 @dataclass
 class _Terrain:
@@ -251,6 +283,9 @@ class LiveRace:
         #: Sonderfall, ohne Verzweigung.
         self.descent_norm = np.array([r.descent_norm for r in self.riders], dtype=np.float64)
         self._brake_coeff = physics.DESCENT_THROTTLE_MAX * (1.0 - self.descent_norm)
+
+        #: Der Ausdauerwert als Abweichung von der Mitte, −0,5 bis +0,5.
+        self.endurance_dev = np.array([r.endurance_dev for r in self.riders], dtype=np.float64)
 
         intensity = self.config.intensity_factor
         if intensity is None:
@@ -405,7 +440,10 @@ class LiveRace:
             + NOISE_AMP_SLOW * np.sin(self._w_slow * t + self._phi_slow)
             + NOISE_AMP_FAST * np.sin(self._w_fast * t + self._phi_fast)
         )
-        power = self.base_power * terrain.power_factor[idx] * noise
+        # Der Verfall zählt in **Eigenzeit**, nicht in Rennuhr: Wer erst
+        # seit einer Stunde fährt, ist eine Stunde alt, auch wenn die
+        # Übertragung seit dreißig läuft.
+        power = self.base_power * self.fade_at(t) * terrain.power_factor[idx] * noise
         power *= physics.downhill_power_taper(self.v_ms)
         power = np.where(active, power, 0.0)
 
@@ -723,8 +761,12 @@ class LiveRace:
             # aber nie zu kurz — sonst hielte die Wiedergabe vor dem
             # letzten Zieleinlauf an.
             f_brems = physics.descent_speed_factor(terrain.brake_ramp, 0.0)
+            # Ebenso beim Verfall: gerechnet wird mit der schlechtesten
+            # Ausdauer, die es geben kann, nicht mit der des schwächsten
+            # Fahrers.
+            verfall = 1.0 - FADE_SPAN_MAX / 2.0
             v = physics.steady_state_speed(
-                self.base_power[weakest] * terrain.power_factor,
+                self.base_power[weakest] * verfall * terrain.power_factor,
                 terrain.grade,
                 self.mass[weakest],
                 self.area[weakest] * terrain.position_k / (f_brems * f_brems),
@@ -784,6 +826,14 @@ class LiveRace:
         """
         return np.maximum(t_wall - self.start_offset_s, 0.0)
 
+    def fade_at(self, t_wall: float) -> np.ndarray:
+        """Der Verfallsfaktor zur Rennuhr ``t_wall``, für die Anzeige.
+
+        Dieselbe Funktion, die im Tick die Leistung verschiebt — nur zur
+        Uhr des Zuschauers statt zur Rechenzeit der Engine.
+        """
+        return endurance_fade(self.own_time(t_wall), self.endurance_dev)
+
     def started_mask(self, t_wall: float) -> np.ndarray:
         return self.start_offset_s <= t_wall
 
@@ -802,6 +852,9 @@ __all__ = [
     "RaceEvent",
     "intensity_for_distance",
     "grade_power_factor",
+    "endurance_fade",
+    "FADE_SPAN_PER_10H",
+    "FADE_SPAN_MAX",
     "climb_points_for",
     "CLIMB_POINTS",
     "STATE_WAITING",

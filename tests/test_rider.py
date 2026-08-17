@@ -111,6 +111,36 @@ def test_abfahrtswert_liegt_um_fuenfzig_und_streut_breit():
     assert riders[0].descent_norm == pytest.approx(riders[0].descent_skill / 100.0)
 
 
+def test_ausdauerwert_ist_verteilt_wie_der_abfahrtswert():
+    """Dieselbe Kurve, dieselbe Lesart — nur eine andere Wirkung."""
+    _, riders = generate_pool()
+    werte = np.array([r.endurance for r in riders])
+    assert werte.min() >= 0.0 and werte.max() <= 100.0
+    assert werte.mean() == pytest.approx(50.0, abs=3.0)
+    assert werte.std() > 19.0
+    assert werte.min() < 10.0 and werte.max() > 90.0
+
+    # Fünfzig ist die Mitte: Dort ist die Abweichung null, und der
+    # Verfall kostet nichts.
+    mitte = [r for r in riders if abs(r.endurance - 50.0) < 0.5]
+    for rider in mitte:
+        assert abs(rider.endurance_dev) < 0.005
+    assert riders[0].endurance_dev == pytest.approx(riders[0].endurance / 100.0 - 0.5)
+
+
+def test_der_ausdauerwert_hat_das_feld_nicht_ausgetauscht():
+    """Die neue Ziehung darf den Zufallsstrom nicht verschieben.
+
+    Sie kommt nach allen anderen — sonst hätten dreihundert Fahrer neue
+    Namen, Körpermaße und FTP-Werte bekommen, nur weil eine Eigenschaft
+    dazugekommen ist.
+    """
+    _, riders = generate_pool()
+    assert riders[0].name == "Oliver Kingsley"
+    assert riders[0].ftp_w == pytest.approx(227.4, abs=0.1)
+    assert riders[0].descent_skill == pytest.approx(69.4, abs=0.1)
+
+
 def test_derselbe_seed_liefert_denselben_pool():
     _, a = generate_pool(seed=4711)
     _, b = generate_pool(seed=4711)

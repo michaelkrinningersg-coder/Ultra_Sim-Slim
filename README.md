@@ -1,9 +1,9 @@
 # UltraSim Slim
 
 Ultracycling-Simulator, schlanke Fassung. Ein Fahrer hat genau drei
-körperliche Eigenschaften — **FTP, Gewicht, Größe** — und einen
-**Abfahrtswert**, eine Strecke ist ein zweidimensionales Höhenprofil, und
-alles andere folgt aus der Physik.
+körperliche Eigenschaften — **FTP, Gewicht, Größe** — und zwei, die nicht
+aus dem Körper folgen: **Abfahrt** und **Ausdauer**. Eine Strecke ist ein
+zweidimensionales Höhenprofil, und alles andere folgt aus der Physik.
 
 Ein Rennen wird **nie vorberechnet**. Die Engine ist ein angehaltener
 Generator, der genau so weit gezogen wird, wie die Uhr des Zuschauers
@@ -74,7 +74,7 @@ Fahrer vierzehn Prozent Zusatzmasse, beim schweren achteinhalb.
 
 ### Pacing
 
-Zielleistung = `FTP · IF · Tagesform · Steigungsfaktor · Trittrauschen`.
+Zielleistung = `FTP · IF · Tagesform · Verfall · Steigungsfaktor · Trittrauschen`.
 
 - **IF** folgt der Renndistanz: 0,72 bei 300 km, 0,70 bei 400, 0,66 bei
   600, 0,64 bei 700, 0,62 bei 850, 0,60 bei 1000 km.
@@ -90,8 +90,8 @@ Zielleistung = `FTP · IF · Tagesform · Steigungsfaktor · Trittrauschen`.
 
 ### Der Abfahrtswert
 
-Die einzige Eigenschaft, die nicht aus dem Körper folgt: eine Zahl von 0
-bis 100 je Fahrer. **Bei 100 rollt er ungebremst aus, bei 0 nimmt er die
+Eine von zwei Eigenschaften, die nicht aus dem Körper folgen: eine Zahl
+von 0 bis 100 je Fahrer. **Bei 100 rollt er ungebremst aus, bei 0 nimmt er die
 volle Drosselung mit** — höchstens **15 %** Tempo, hinterlegt als
 `DESCENT_THROTTLE_MAX` in `core/physics.py`.
 
@@ -105,12 +105,45 @@ und bergauf ist der Wert wirkungslos.
 Die Verteilung ist eine **Beta(2, 2)**, auf 0 bis 100 gestreckt: eine
 Glocke um 50, aber breiter als die Normalverteilung (σ ≈ 22 statt 16,5)
 und von Haus aus begrenzt — eine abgeschnittene Gaußkurve hätte einen
-Klumpen auf 0 und 100 gelegt. Über eine Bergetappe kostet der Unterschied
-zwischen 100 und 0 rund **42 Minuten**, und zwar linear gestaffelt:
-100 → 40,678 h, 75 → 40,836, 50 → 41,002, 25 → 41,179, 0 → 41,368 h.
+Klumpen auf 0 und 100 gelegt. Über den Alpenmarathon kostet der
+Unterschied zwischen 100 und 0 rund **44 Minuten**, und zwar linear
+gestaffelt: 100 → 47,222 h, 75 → 47,388, 50 → 47,564, 25 → 47,749,
+0 → 47,948 h.
 
-Was es **nicht** gibt: Ermüdung, W′-Bilanz, Verpflegung, Schlaf, Wetter,
-Wind, Defekte, Stürze, Taktik, Windschatten, Pausen — und keine
+### Der Ausdauerwert
+
+Die zweite Zahl von 0 bis 100, und die einzige, bei der **50 neutral**
+ist: Dort läuft das Rennen exakt so wie ohne sie. Sie verschiebt nicht
+die Leistung, sondern ihren **Verlauf** — je länger ein Fahrer unterwegs
+ist, desto weiter geht die Schere auf:
+
+```
+Verfall(t) = 1 + Spanne(t) · (Ausdauer/100 − 0,5)
+Spanne(t)  = min(FADE_SPAN_PER_10H · Eigenzeit / 10 h,  FADE_SPAN_MAX)
+```
+
+Mit `FADE_SPAN_PER_10H = 0,06` und `FADE_SPAN_MAX = 0,15` (beide in
+`core/engine.py`) trennen nach zehn Stunden sechs Prozent Leistung die
+Ausdauer 100 von der Ausdauer 0, ab fünfundzwanzig Stunden fünfzehn.
+Bezugsgröße ist die **Eigenzeit**, nicht der Streckenanteil: Damit wirkt
+der Wert von allein dort, wo Ausdauer zählt.
+
+Gemessen, ein Fahrer über drei Strecken, sonst alles gleich:
+
+| Strecke | Ausdauer 100 | 50 | 0 | Spanne |
+|---|---|---|---|---|
+| Ostsee 300 km | 9,251 h | 9,301 | 9,354 | 6 min |
+| Karpaten 700 km | 27,010 h | 27,640 | 28,358 | 81 min |
+| Alpen 1000 km | 45,715 h | 47,427 | 49,400 | 3 h 41 |
+
+Weil die Verteilung symmetrisch um 50 liegt, bleibt die Eichung der
+IF-Tabelle stehen: Das Feld als Ganzes fährt weiterhin dieselben Zeiten.
+Im Board zeigt die Spalte **Verfall**, was der Wert bis zu diesem Moment
+gemacht hat — die Abweichung von der Leistung, mit der der Fahrer
+losgerollt ist.
+
+Was es **nicht** gibt: W′-Bilanz, Verpflegung, Schlaf, Wetter, Wind,
+Defekte, Stürze, Taktik, Windschatten, Pausen — und keine
 Geschwindigkeitsgrenze in der Abfahrt außer der, die der Abfahrtswert
 setzt. Das ist Absicht.
 
@@ -350,7 +383,7 @@ Kein Node, kein Build-Schritt. Alpine.js liegt als Datei bei.
 
 ```
 pip install -r requirements-dev.txt
-pytest -q                                   # 207 Tests
+pytest -q                                   # 215 Tests
 python -m ultraslim.app --no-browser        # Server ohne Browser
 ```
 

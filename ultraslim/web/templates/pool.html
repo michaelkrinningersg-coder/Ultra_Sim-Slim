@@ -27,15 +27,18 @@
     <p class="dim" style="font-size:.75rem;margin-bottom:.6rem">
       Drei Eigenschaften folgen aus dem Körper — FTP, Gewicht, Größe —, die
       Frontalfläche ist daraus abgeleitet (A = 0,0276 · h<sup>0,725</sup> ·
-      m<sup>0,425</sup>) und nicht selbst gewürfelt. Der <strong>Abfahrtswert</strong>
-      ist die einzige Eigenschaft, die nicht aus der Physik folgt: Bei 100 rollt
-      der Fahrer bergab ungebremst aus, bei 0 nimmt er die volle Drosselung mit.
+      m<sup>0,425</sup>) und nicht selbst gewürfelt. Zwei Eigenschaften folgen
+      nicht aus der Physik: Der <strong>Abfahrtswert</strong> — bei 100 rollt der
+      Fahrer bergab ungebremst aus, bei 0 nimmt er die volle Drosselung mit — und
+      die <strong>Ausdauer</strong>, bei der 50 neutral ist: Darüber wächst die
+      Leistung mit der Fahrzeit, darunter fällt sie.
     </p>
     <table class="board">
       <thead>
         <tr><th>#</th><th>Nr</th><th>Fahrer</th><th>Team</th>
             <th class="right">FTP</th><th class="right">Gewicht</th><th class="right">Größe</th>
             <th class="right">W/kg</th><th class="right">Abfahrt</th>
+            <th class="right">Ausdauer</th>
             <th class="right">A<sub>frontal</sub></th></tr>
       </thead>
       <tbody>
@@ -52,6 +55,7 @@
           <td class="right mono">{{ r.height_cm|round|int }} cm</td>
           <td class="right mono"><strong>{{ '%.2f'|format(r.w_per_kg) }}</strong></td>
           <td class="right mono">{{ r.descent_skill|round|int }}</td>
+          <td class="right mono">{{ r.endurance|round|int }}</td>
           <td class="right mono faint">{{ '%.3f'|format(r.frontal_area_m2) }} m²</td>
         </tr>
         {% endfor %}

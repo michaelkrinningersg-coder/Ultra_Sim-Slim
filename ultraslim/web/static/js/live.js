@@ -62,10 +62,25 @@ const BOARD_COLUMNS = [
     hint: 'Höhenmeter je Stunde. In der Bergwertung die des gewählten '
       + 'Anstiegs, sonst die des Anstiegs, in dem der Fahrer gerade steckt.',
   },
+  {
+    key: 'verfall',
+    label: 'Verfall',
+    hint: 'Was der Ausdauerwert bis jetzt gemacht hat: Abweichung von der '
+      + 'Leistung, mit der der Fahrer losgerollt ist. Bei Ausdauer 50 bleibt '
+      + 'sie null.',
+  },
 ];
 
 //: Was ohne eigene Wahl steht.
 const DEFAULT_COLUMNS = ['km', 'biscp', 'vorrang'];
+
+//: Der Verfall als Abweichung von der Startleistung.
+function fadeText(pct) {
+  if (pct === null || pct === undefined) return '–';
+  const d = pct - 100;
+  if (Math.abs(d) < 0.05) return '±0,0 %';
+  return `${d > 0 ? '+' : '−'}${Math.abs(d).toFixed(1).replace('.', ',')} %`;
+}
 
 function hms(seconds) {
   if (seconds === null || seconds === undefined) return '—';
@@ -283,7 +298,7 @@ function raceLive(raceId) {
     },
     setGroupBy(mode) { this.groupBy = mode; this._collapsed = []; this.rememberFilter(); },
 
-    hms, gap,
+    hms, gap, fadeText,
 
     //: Welche der beiden Zeiten eine Tickermeldung zeigt.
     //:
@@ -344,6 +359,9 @@ function raceLive(raceId) {
         case 'tempo': return row.v_kmh.toFixed(1);
         case 'leistung': return row.power_w || '–';
         case 'vam': return row.vam === null || row.vam === undefined ? '–' : row.vam;
+        // Angezeigt wird die Abweichung, nicht der Faktor: „+2,4 %" ist
+        // die Aussage, „102,4 %" ist eine Rechenaufgabe.
+        case 'verfall': return fadeText(row.fade_pct);
         default: return '';
       }
     },
@@ -352,6 +370,11 @@ function raceLive(raceId) {
       if (key === 'trend') return row.trend > 0 ? 'pos' : row.trend < 0 ? 'neg' : 'faint';
       if (key === 'vam') return row.vam === null || row.vam === undefined ? 'faint' : '';
       if (key === 'vorrang') return row.prev_rank ? '' : 'faint';
+      if (key === 'verfall') {
+        if (row.fade_pct === null || row.fade_pct === undefined) return 'faint';
+        const d = row.fade_pct - 100;
+        return d > 0.05 ? 'good' : d < -0.05 ? 'bad' : 'faint';
+      }
       return '';
     },
 
