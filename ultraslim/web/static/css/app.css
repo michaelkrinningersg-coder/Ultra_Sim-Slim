@@ -132,7 +132,12 @@ button:disabled { opacity: .4; cursor: default; }
    unterscheidet Groß- und Kleinschreibung, und ein Board, das Physik
    anzeigt, sollte sich daran halten. */
 .statgrid .k .u { color: #414c63; margin-left: .2em; text-transform: none; letter-spacing: 0; }
-.statgrid .v { font-family: var(--mono); font-size: 1.02rem; line-height: 1.3; }
+.statgrid .v { font-family: var(--mono); font-size: 1.02rem; line-height: 1.3;
+                white-space: nowrap; }
+.statgrid .v.big { font-size: 1.5rem; color: var(--accent); font-weight: 600; letter-spacing: -.01em; }
+/* Eine Zelle über zwei Spalten — für die Uhr, die als einzige mehr
+   Platz braucht als eine dreistellige Zahl. */
+.statgrid .cell.span2 { grid-column: span 2; }
 /* Das Rad ist der einzige Wert, der keine Zahl ist. Der Chip muss
    deshalb in eine Spalte passen, die für dreistellige Zahlen bemessen
    ist — sonst schiebt er das Raster auseinander, das er eigentlich
@@ -685,8 +690,6 @@ details.why[open] > summary::before { content: "▾ "; }
    mittelbreiten Bildschirmen immer das Team ab und nie der Name. Der
    Name bekommt hier den Überschuss — er ist die wichtigere Spalte. */
 .climbtable .c-team { width: 11.6rem; }
-.climbhead { display: flex; align-items: center; gap: .5rem; font-size: .75rem;
-             margin-bottom: .25rem; }
 .badge.cat { border-color: #b0453f; color: #ff8f88; font-family: var(--mono); }
 
 /* Deckungsbalken der Energiebilanz. Der Untergrund ist der Bedarf, der
@@ -708,11 +711,14 @@ details.why[open] > summary::before { content: "▾ "; }
 .focushead .fname { font-weight: 600; font-size: .95rem; }
 .swatch.tall { width: .3rem; height: 1.1rem; border-radius: 1px; }
 
-/* Die drei Stammdaten und die Tagesform: kleiner gesetzt als die
+/* Körpermaße und die vier Eigenschaftswerte: kleiner gesetzt als die
    Live-Werte darüber, weil sie sich im Rennen nicht ändern. */
-.readout.riderdata { padding-top: .45rem; border-top: 1px solid var(--line);
-                     gap: .85rem; }
-.readout.riderdata .v { font-size: .88rem; color: var(--fg-dim); }
+.statgrid.riderdata { margin-top: .5rem; padding-top: .5rem;
+                      border-top: 1px solid var(--line); }
+.statgrid.riderdata .v { font-size: .88rem; color: var(--fg-dim); }
+/* Der Fahrertyp gehört in die Kopfzeile, nicht ins Zahlenraster: Er ist
+   eine Einordnung, keine Messgröße. */
+.chip.typ { border-color: var(--accent-2); color: var(--accent-2); }
 
 /* Wer noch nicht gestartet ist: vorhanden, aber zurückgenommen. */
 .board tr.waiting td { opacity: .45; }
@@ -720,8 +726,12 @@ details.why[open] > summary::before { content: "▾ "; }
 
 /* Der Anstieg, in dem der Fokusfahrer gerade steckt. Abgesetzt, weil er
    nur zeitweise da ist — eine Zeile, die kommt und geht, soll nicht
-   aussehen wie eine, die fehlt. */
-.readout.climbnow { padding: .4rem .5rem; border: 1px solid rgba(217,83,79,.35);
-                    border-radius: var(--radius); background: rgba(217,83,79,.07);
-                    gap: .9rem; }
+   aussehen wie eine, die fehlt. Die Kategorie steht über dem Raster:
+   Sie ist ein Name, keine Zahl, und in einer Zahlenspalte hätte sie das
+   Raster auseinandergeschoben. */
+.climbnow { margin-top: .5rem; padding: .4rem .5rem;
+            border: 1px solid rgba(217,83,79,.35);
+            border-radius: var(--radius); background: rgba(217,83,79,.07); }
+.climbhead { display: flex; align-items: center; gap: .4rem; font-size: .68rem;
+             text-transform: uppercase; letter-spacing: .08em; margin-bottom: .35rem; }
 .chip.cat { border-color: #e08a86; color: #e08a86; }

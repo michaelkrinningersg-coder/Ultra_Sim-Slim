@@ -74,63 +74,79 @@
             <span class="flag" :class="'flag-' + focus.nation" :title="focus.nation"></span>
             <span class="faint" x-text="focus.team"></span>
             <span class="chip" :class="{fin: focus.state===2}" x-text="stateLabel(focus.state)"></span>
+            <span class="chip typ" :title="`Kletterprofil ${focus.climb_profile} von 100`"
+                  x-text="riderType(focus.climb_profile)"></span>
           </div>
-          <div class="readout" style="margin-top:.55rem">
-            <div class="item"><span class="k">Gefahrene Zeit</span>
-              <span class="v big" x-text="hms(liveOwnTime)"></span></div>
-            <div class="item"><span class="k">Startzeit</span>
-              <span class="v" x-text="hms(focus.start_offset_s)"></span></div>
-            <div class="item"><span class="k">Gefahren<span class="u">km</span></span>
-              <span class="v" x-text="(focusDist/1000).toFixed(1)"></span></div>
-            <div class="item"><span class="k">Rest<span class="u">km</span></span>
-              <span class="v" x-text="(focusRemaining/1000).toFixed(1)"></span></div>
-            <div class="item"><span class="k">Tempo<span class="u">km/h</span></span>
-              <span class="v" x-text="focus.v_kmh.toFixed(1)"></span></div>
-            <div class="item"><span class="k">Steigung<span class="u">%</span></span>
-              <span class="v" x-text="focus.grade_pct.toFixed(1)"></span></div>
-            <div class="item"><span class="k">Leistung<span class="u">W</span></span>
-              <span class="v" x-text="focus.power_w"></span></div>
-          </div>
-          <template x-if="focus.climb">
-            <div class="readout climbnow" style="margin-top:.45rem">
-              <div class="item"><span class="k">im Anstieg</span>
-                <span class="v wide"><span class="chip cat" x-text="focus.climb.category"></span></span></div>
-              <div class="item"><span class="k">noch<span class="u">km</span></span>
-                <span class="v" x-text="(focus.climb.remaining_m/1000).toFixed(1)"></span></div>
-              <div class="item"><span class="k">bisher</span>
-                <span class="v" x-text="focus.climb.elapsed_s === null ? '—' : hms(focus.climb.elapsed_s)"></span></div>
-              <div class="item"><span class="k" title="Höhenmeter je Stunde">VAM<span class="u">m/h</span></span>
-                <span class="v" x-text="focus.climb.vam === null ? '—' : focus.climb.vam"></span></div>
-            </div>
-          </template>
 
-          <div class="readout riderdata" style="margin-top:.45rem">
-            <div class="item"><span class="k">FTP<span class="u">W</span></span>
-              <span class="v" x-text="focus.ftp_w"></span></div>
-            <div class="item"><span class="k">Gewicht<span class="u">kg</span></span>
-              <span class="v" x-text="focus.weight_kg"></span></div>
-            <div class="item"><span class="k">Größe<span class="u">cm</span></span>
-              <span class="v" x-text="focus.height_cm"></span></div>
-            <div class="item"><span class="k">rel. FTP<span class="u">W/kg</span></span>
-              <span class="v" x-text="focus.w_per_kg"></span></div>
-            <div class="item"><span class="k"
-                  title="0 bis 100. Bei 100 rollt er bergab ungebremst aus, bei 0 nimmt er die volle Drosselung mit.">Abfahrt</span>
-              <span class="v" x-text="focus.descent_skill"></span></div>
-            <div class="item"><span class="k"
-                  title="0 bis 100, 50 ist neutral. Darüber wächst die Leistung mit der Fahrzeit, darunter fällt sie.">Ausdauer</span>
-              <span class="v" x-text="focus.endurance"></span></div>
-            <div class="item"><span class="k"
-                  title="0 bis 100, 50 ist neutral. Wie sauber er auf dem Rad liegt — wirkt auf den Luftwiderstand, im Flachen am stärksten.">Aero</span>
-              <span class="v" x-text="focus.aero"></span></div>
-            <div class="item"><span class="k"
-                  title="Kletterer (100) oder Rouleur (0). Der Kletterer drückt am Anstieg und spart im Flachen, der Rouleur umgekehrt.">Profil</span>
-              <span class="v" x-text="`${focus.climb_profile} ${focus.climb_profile >= 65 ? 'Kletterer' : focus.climb_profile <= 35 ? 'Rouleur' : ''}`.trim()"></span></div>
-            <div class="item"><span class="k" title="Zufallsfaktor auf die FTP, einmal je Rennen gezogen">Tagesform<span class="u">%</span></span>
-              <span class="v" x-text="focus.form_pct"></span></div>
-            <div class="item"><span class="k"
+          <!-- Die Uhr: die einzige Zahl, die groß sein muss. Sie steht
+               über zwei Spalten, damit ein zweistelliger Stundenwert das
+               Raster nicht auseinanderschiebt. -->
+          <div class="statgrid" style="margin-top:.55rem">
+            <div class="cell span2"><span class="k">Gefahrene Zeit</span>
+              <span class="v big" x-text="hms(liveOwnTime)"></span></div>
+            <div class="cell"><span class="k">Startzeit</span>
+              <span class="v" x-text="hms(focus.start_offset_s)"></span></div>
+
+            <div class="sep"></div>
+
+            <div class="cell"><span class="k">Gefahren<span class="u">km</span></span>
+              <span class="v" x-text="(focusDist/1000).toFixed(1)"></span></div>
+            <div class="cell"><span class="k">Rest<span class="u">km</span></span>
+              <span class="v" x-text="(focusRemaining/1000).toFixed(1)"></span></div>
+            <div class="cell"><span class="k">Tempo<span class="u">km/h</span></span>
+              <span class="v" x-text="focus.v_kmh.toFixed(1)"></span></div>
+            <div class="cell"><span class="k">Steigung<span class="u">%</span></span>
+              <span class="v" x-text="focus.grade_pct.toFixed(1)"></span></div>
+            <div class="cell"><span class="k">Leistung<span class="u">W</span></span>
+              <span class="v" x-text="focus.power_w"></span></div>
+            <div class="cell"><span class="k"
                   title="Was der Ausdauerwert bis jetzt gemacht hat: Abweichung von der Leistung, mit der er losgerollt ist.">Verfall</span>
               <span class="v" :class="focus.fade_pct > 100.05 ? 'good' : focus.fade_pct < 99.95 ? 'bad' : ''"
                     x-text="fadeText(focus.fade_pct)"></span></div>
+          </div>
+
+          <template x-if="focus.climb">
+            <div class="climbnow">
+              <div class="climbhead">
+                <span class="chip cat" x-text="focus.climb.category"></span>
+                <span class="faint">im Anstieg</span>
+              </div>
+              <div class="statgrid">
+                <div class="cell"><span class="k">noch<span class="u">km</span></span>
+                  <span class="v" x-text="(focus.climb.remaining_m/1000).toFixed(1)"></span></div>
+                <div class="cell"><span class="k">bisher</span>
+                  <span class="v" x-text="focus.climb.elapsed_s === null ? '—' : hms(focus.climb.elapsed_s)"></span></div>
+                <div class="cell"><span class="k" title="Höhenmeter je Stunde">VAM<span class="u">m/h</span></span>
+                  <span class="v" x-text="focus.climb.vam === null ? '—' : focus.climb.vam"></span></div>
+              </div>
+            </div>
+          </template>
+
+          <!-- Stammdaten: kleiner gesetzt, weil sie sich im Rennen nicht
+               ändern. Neun Zellen, drei volle Zeilen — kein Rest. -->
+          <div class="statgrid riderdata">
+            <div class="cell"><span class="k">FTP<span class="u">W</span></span>
+              <span class="v" x-text="focus.ftp_w"></span></div>
+            <div class="cell"><span class="k">Gewicht<span class="u">kg</span></span>
+              <span class="v" x-text="focus.weight_kg"></span></div>
+            <div class="cell"><span class="k">Größe<span class="u">cm</span></span>
+              <span class="v" x-text="focus.height_cm"></span></div>
+            <div class="cell"><span class="k">rel. FTP<span class="u">W/kg</span></span>
+              <span class="v" x-text="focus.w_per_kg"></span></div>
+            <div class="cell"><span class="k" title="Zufallsfaktor auf die FTP, einmal je Rennen gezogen">Tagesform<span class="u">%</span></span>
+              <span class="v" x-text="focus.form_pct"></span></div>
+            <div class="cell"><span class="k"
+                  title="0 bis 100. Bei 100 rollt er bergab ungebremst aus, bei 0 nimmt er die volle Drosselung mit.">Abfahrt</span>
+              <span class="v" x-text="focus.descent_skill"></span></div>
+            <div class="cell"><span class="k"
+                  title="0 bis 100, 50 ist neutral. Darüber wächst die Leistung mit der Fahrzeit, darunter fällt sie.">Ausdauer</span>
+              <span class="v" x-text="focus.endurance"></span></div>
+            <div class="cell"><span class="k"
+                  title="0 bis 100, 50 ist neutral. Wie sauber er auf dem Rad liegt — wirkt auf den Luftwiderstand, im Flachen am stärksten.">Aero</span>
+              <span class="v" x-text="focus.aero"></span></div>
+            <div class="cell"><span class="k"
+                  title="Kletterer (100) oder Rouleur (0). Der Kletterer drückt am Anstieg und spart im Flachen, der Rouleur umgekehrt.">Profil</span>
+              <span class="v" x-text="focus.climb_profile"></span></div>
           </div>
         </div>
       </template>

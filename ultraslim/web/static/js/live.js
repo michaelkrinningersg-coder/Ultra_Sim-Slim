@@ -677,6 +677,14 @@ function raceLive(raceId) {
       return state === 2 ? 'im Ziel' : state === -1 ? 'wartet auf Start' : 'fährt';
     },
 
+    //: Das Kletterprofil als Wort. Die Zahl steht im Raster, hier steht,
+    //: was sie bedeutet — 65 und 35 sind die Grenzen, ab denen ein Typ
+    //: erkennbar ist statt bloß leicht aus der Mitte gerückt.
+    riderType(profil) {
+      if (profil === null || profil === undefined) return '';
+      return profil >= 65 ? 'Kletterer' : profil <= 35 ? 'Rouleur' : 'Allrounder';
+    },
+
     destroy() {
       if (this.source) this.source.close();
       if (this.raf) cancelAnimationFrame(this.raf);
