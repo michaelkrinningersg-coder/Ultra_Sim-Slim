@@ -15,6 +15,7 @@ from ultraslim.core.engine import (
     FINISH_KICK_MAX,
     FINISH_KICK_START,
     PROFILE_SPAN,
+    RHYTHM_MAX,
     START_PROFILE_SPAN,
     STATE_RIDING,
     STATE_WAITING,
@@ -27,6 +28,8 @@ from ultraslim.core.engine import (
     grade_power_factor,
     intensity_for_distance,
     profile_power_factor,
+    rhythm_power_factor,
+    roughness,
     start_profile_factor,
 )
 from ultraslim.core import physics
@@ -698,3 +701,59 @@ def test_startprofil_und_endspurt_im_rennen():
     mit_halb, mit_ziel = fahre(start_profile=50.0, finish_kick=100.0)
     assert mit_halb == pytest.approx(ohne_halb), "vorher darf er nichts tun"
     assert mit_ziel < ohne_ziel, "am Ziel schon"
+
+
+def test_die_unruhe_zaehlt_antritte_nicht_steilheit():
+    """Ein gleichmäßiger Anstieg ist ruhig, egal wie steil."""
+    schritt = 100.0
+    n = 300  # 30 km
+
+    gleichmaessig = np.full(n, 0.08)      # ein durchgehender Achtprozenter
+    assert roughness(gleichmaessig, schritt).mean() < 0.05
+
+    flach = np.full(n, 0.0)
+    assert roughness(flach, schritt).max() == 0.0
+
+    # Auf und ab zwischen −2 % und +5 %, alle zwei Kilometer: gut
+    # sieben Antritte auf dreißig Kilometern, also rund drei Viertel der
+    # Referenzdichte.
+    welle = np.where((np.arange(n) // 20) % 2 == 0, 0.05, -0.02)
+    assert roughness(welle, schritt).mean() > 0.7
+
+    # Kräusel unterhalb der Schwelle sind keine Antritte.
+    kraeusel = np.where((np.arange(n) // 5) % 2 == 0, 0.02, -0.01)
+    assert roughness(kraeusel, schritt).max() == 0.0
+
+
+def test_der_rhythmus_ist_ein_einseitiger_abzug():
+    """Hundert kostet nichts, null das Maximum — und nur im Unruhigen."""
+    rough = np.array([0.0, 0.5, 1.0])
+    bester = rhythm_power_factor(rough, 1.0)
+    schlechtester = rhythm_power_factor(rough, 0.0)
+
+    assert bester == pytest.approx(np.ones(3)), "bei 100 nie ein Abzug"
+    assert schlechtester[0] == pytest.approx(1.0), "auf glatter Strecke auch nicht"
+    assert schlechtester[1] == pytest.approx(1.0 - RHYTHM_MAX / 2)
+    assert schlechtester[2] == pytest.approx(1.0 - RHYTHM_MAX)
+    # Niemand gewinnt etwas: der Faktor bleibt überall bei höchstens 1.
+    for wert in (0.0, 0.25, 0.5, 0.75, 1.0):
+        assert rhythm_power_factor(rough, wert).max() <= 1.0 + 1e-12
+
+
+def test_der_rhythmus_wirkt_nur_auf_unruhigem_gelaende():
+    """Auf glatter Strecke ist der Wert für jeden folgenlos."""
+    teams, riders = kleines_feld(1)
+
+    def zeit(archetyp, hm, wert):
+        fahrer = replace(riders[0], rhythm=wert)
+        race = LiveRace(kurzstrecke(archetyp, km=150, hm=hm), [fahrer], teams,
+                        RaceConfig(name="Test", seed=5, start_interval_s=0.0))
+        while not race.finished:
+            race.advance_to(race.sim_t + 3600.0)
+        return float(race.finish_time_s[0])
+
+    glatt_gut, glatt_schlecht = zeit("flach", 200, 100.0), zeit("flach", 200, 0.0)
+    assert glatt_schlecht == pytest.approx(glatt_gut, rel=0.002)
+
+    wellig_gut, wellig_schlecht = zeit("wellig", 2500, 100.0), zeit("wellig", 2500, 0.0)
+    assert wellig_schlecht > wellig_gut * 1.005, "im Welligen muss es kosten"

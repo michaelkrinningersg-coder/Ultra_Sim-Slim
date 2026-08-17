@@ -87,6 +87,13 @@ const BOARD_COLUMNS = [
       + 'Distanz und wird zum Ziel hin stärker; 0 heißt kein Endspurt.',
   },
   {
+    key: 'rhythmus',
+    label: 'Rhythmus',
+    hint: 'Wie gut der Fahrer mit ständigem Auf und Ab zurechtkommt, 0 bis 100. '
+      + 'Bei 100 kostet ihn unruhiges Gelände nichts, bei 0 verliert er dort am '
+      + 'meisten; auf glatter Strecke wirkt der Wert bei niemandem.',
+  },
+  {
     key: 'verfall',
     label: 'Verfall',
     hint: 'Was der Ausdauerwert bis jetzt gemacht hat: Abweichung von der '
@@ -390,6 +397,7 @@ function raceLive(raceId) {
         case 'profil': return row.climb_profile;
         case 'anlauf': return row.start_profile;
         case 'spurt': return row.finish_kick;
+        case 'rhythmus': return row.rhythm;
         default: return '';
       }
     },

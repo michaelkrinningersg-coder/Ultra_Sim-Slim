@@ -880,3 +880,22 @@ def test_startprofil_und_spurt_stehen_im_bild(token, laufendes_rennen):
             f"/api/playback/{token}/control", json={"action": "sort", "value": schluessel}
         )
         assert laufendes_rennen.get(f"/api/playback/{token}/frame").json()["sort"] == schluessel
+
+
+def test_rhythmus_steht_im_bild(token, laufendes_rennen):
+    laufendes_rennen.post(f"/api/playback/{token}/control", json={"action": "seek", "value": 4 * 3600})
+    bild = laufendes_rennen.get(f"/api/playback/{token}/frame").json()
+    fokus = bild["focus"]
+    assert 0 <= fokus["rhythm"] <= 100
+    assert 0.0 <= fokus["roughness"] <= 1.0
+    # Der Abzug ist einseitig: nie negativ, nie größer als die Spanne.
+    assert 0.0 <= fokus["rhythm_loss_pct"] <= 6.01
+
+    assert 0 <= bild["board"]["rows"][0]["rhythm"] <= 100
+    eintrag = laufendes_rennen.get(f"/api/race/{RACE_ID}/startlist").json()["entries"][0]
+    assert 0 <= eintrag["rhythm"] <= 100
+
+    laufendes_rennen.post(
+        f"/api/playback/{token}/control", json={"action": "sort", "value": "rhythmus"}
+    )
+    assert laufendes_rennen.get(f"/api/playback/{token}/frame").json()["sort"] == "rhythmus"

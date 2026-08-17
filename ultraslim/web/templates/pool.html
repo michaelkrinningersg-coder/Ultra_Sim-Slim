@@ -39,6 +39,9 @@
       <em>wann</em> er stark ist: <strong>Start</strong> — 100 rollt schnell
       los und baut ab, 0 kommt spät in Fahrt — und der <strong>Spurt</strong>
       über das letzte Fünftel der Distanz, bei dem 0 wirklich null bedeutet.
+      Der <strong>Rhythmus</strong> schließlich sagt, wie gut jemand mit
+      ständigem Auf und Ab zurechtkommt: bei 100 kostenlos, bei 0 am teuersten
+      — und auf glatter Strecke für niemanden spürbar.
     </p>
     <table class="board">
       <thead>
@@ -48,6 +51,7 @@
             <th class="right">Ausdauer</th>
             <th class="right">Aero</th><th class="right">Profil</th>
             <th class="right">Start</th><th class="right">Spurt</th>
+            <th class="right">Rhythmus</th>
             <th class="right">A<sub>frontal</sub></th></tr>
       </thead>
       <tbody>
@@ -69,6 +73,7 @@
           <td class="right mono">{{ r.climb_profile|round|int }}</td>
           <td class="right mono">{{ r.start_profile|round|int }}</td>
           <td class="right mono">{{ r.finish_kick|round|int }}</td>
+          <td class="right mono">{{ r.rhythm|round|int }}</td>
           <td class="right mono faint">{{ '%.3f'|format(r.frontal_area_m2) }} m²</td>
         </tr>
         {% endfor %}

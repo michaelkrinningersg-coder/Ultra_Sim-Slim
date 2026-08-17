@@ -203,3 +203,14 @@ def test_die_beiden_neuen_werte_haben_das_feld_nicht_ausgetauscht():
     assert riders[0].endurance == pytest.approx(47.9, abs=0.1)
     assert riders[0].aero == pytest.approx(17.0, abs=0.1)
     assert riders[0].climb_profile == pytest.approx(76.3, abs=0.1)
+
+
+def test_rhythmuswert_ist_einseitig_gezogen():
+    _, riders = generate_pool()
+    werte = np.array([r.rhythm for r in riders])
+    assert werte.min() >= 0.0 and werte.max() <= 100.0
+    assert werte.mean() == pytest.approx(50.0, abs=3.5)
+    assert werte.std() > 19.0
+    # Anders als bei Ausdauer oder Aero ist hier 100 der Nullpunkt des
+    # Abzugs, nicht die Mitte.
+    assert riders[0].rhythm_norm == pytest.approx(riders[0].rhythm / 100.0)

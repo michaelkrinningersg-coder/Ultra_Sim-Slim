@@ -1,10 +1,10 @@
 """Fahrer, Teams und der Generator für den Pool.
 
 Ein Fahrer hat in dieser Fassung genau drei körperliche Eigenschaften:
-**FTP, Gewicht, Größe**. Was er damit anfängt, sagen sechs Zahlen von 0
+**FTP, Gewicht, Größe**. Was er damit anfängt, sagen sieben Zahlen von 0
 bis 100: **Abfahrt**, **Ausdauer**, **Aerodynamik**, **Kletterprofil**,
-**Startprofil** und **Endspurt**. Alles andere — Magen, Schlaf,
-Charakter — ist bewusst nicht da.
+**Startprofil**, **Endspurt** und **Rhythmus**. Alles andere — Magen,
+Schlaf, Charakter — ist bewusst nicht da.
 """
 
 from __future__ import annotations
@@ -85,9 +85,10 @@ AERO_BETA = 2.0
 CLIMB_PROFILE_WEIGHT_SHARE = 0.6
 CLIMB_PROFILE_BETA = 2.0
 
-#: Startprofil und Endspurt, wieder dieselbe Glocke.
+#: Startprofil, Endspurt und Rhythmus, wieder dieselbe Glocke.
 START_PROFILE_BETA = 2.0
 FINISH_KICK_BETA = 2.0
+RHYTHM_BETA = 2.0
 
 
 @dataclass(frozen=True)
@@ -139,6 +140,11 @@ class Rider:
     #: erst auf dem letzten Fünftel der Distanz und wird zum Ziel hin
     #: stärker.
     finish_kick: float = 0.0
+    #: Wie gut er mit ständigem Auf und Ab zurechtkommt, 0 bis 100.
+    #: Einseitig wie der Abfahrtswert: Bei 100 kostet ihn unruhiges
+    #: Gelände nichts, bei 0 verliert er dort das Maximum. Auf glatter
+    #: Strecke ist der Wert für jeden wirkungslos.
+    rhythm: float = 100.0
 
     # ------------------------------------------------------------------
     @property
@@ -184,6 +190,11 @@ class Rider:
         return float(np.clip(self.finish_kick / 100.0, 0.0, 1.0))
 
     @property
+    def rhythm_norm(self) -> float:
+        """Der Rhythmuswert auf 0 bis 1 — 1 heißt: kein Verlust."""
+        return float(np.clip(self.rhythm / 100.0, 0.0, 1.0))
+
+    @property
     def frontal_area_m2(self) -> float:
         return float(physics.frontal_area(self.height_cm, self.weight_kg))
 
@@ -212,6 +223,7 @@ class Rider:
             "climb_profile": round(self.climb_profile, 1),
             "start_profile": round(self.start_profile, 1),
             "finish_kick": round(self.finish_kick, 1),
+            "rhythm": round(self.rhythm, 1),
         }
 
 
@@ -304,11 +316,13 @@ def generate_pool(seed: int = 20260101) -> tuple[list[Team], list[Rider]]:
 
     anlauf = rng.beta(START_PROFILE_BETA, START_PROFILE_BETA, n) * 100.0
     spurt = rng.beta(FINISH_KICK_BETA, FINISH_KICK_BETA, n) * 100.0
+    rhythmus = rng.beta(RHYTHM_BETA, RHYTHM_BETA, n) * 100.0
 
     riders = [
         replace(r, endurance=float(e), aero=float(a), climb_profile=float(p),
-                start_profile=float(sp), finish_kick=float(fk))
-        for r, e, a, p, sp, fk in zip(riders, ausdauer, aero, profil, anlauf, spurt)
+                start_profile=float(sp), finish_kick=float(fk), rhythm=float(rh))
+        for r, e, a, p, sp, fk, rh
+        in zip(riders, ausdauer, aero, profil, anlauf, spurt, rhythmus)
     ]
     return teams, riders
 
@@ -347,4 +361,5 @@ __all__ = [
     "CLIMB_PROFILE_WEIGHT_SHARE",
     "START_PROFILE_BETA",
     "FINISH_KICK_BETA",
+    "RHYTHM_BETA",
 ]

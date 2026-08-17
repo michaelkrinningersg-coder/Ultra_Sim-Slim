@@ -116,6 +116,29 @@ START_PROFILE_SPAN = 0.08
 FINISH_KICK_START = 0.80
 FINISH_KICK_MAX = 0.10
 
+#: Rhythmusbruch. Die Streckengröße dahinter ist die **Antrittsdichte**:
+#: wie oft die Steigung in einem Fenster von zehn Kilometern die
+#: Schwelle von drei Prozent von unten nach oben kreuzt, je Kilometer.
+#:
+#: Warum nicht die Streuung der Steigung, die zuerst naheliegt: Sie
+#: unterscheidet die Strecken kaum. Über die sechs Kalenderstrecken
+#: liegt sie zwischen 0,68 und 1,02 Prozentpunkten — die flache Ostsee
+#: und das Hochgebirge trennt Faktor 1,5, weil jede erzeugte Strecke
+#: dieselbe feine Welligkeit trägt. Die Antrittsdichte trennt um Faktor
+#: sieben und in der richtigen Form: Der Wellenritt steht oben, die
+#: flache Strecke (deren Kräusel die drei Prozent nie erreichen) und
+#: das Hochgebirge (wenige, lange Anstiege) stehen unten.
+#:
+#: Mittlere Unruhe der Kalenderstrecken bei ``RHYTHM_REFERENCE``:
+#: Toskana 0,58 · Ardennen 0,43 · Pyrenäen 0,28 · Ostsee 0,27 ·
+#: Karpaten 0,21 · Alpen 0,09.
+RHYTHM_THRESHOLD = 0.03
+RHYTHM_WINDOW_M = 10_000.0
+RHYTHM_REFERENCE = 0.3      # Antritte je Kilometer für Unruhe 1
+#: Einseitig, als Abzug: Bei Rhythmus 100 kostet unruhiges Gelände
+#: nichts, bei 0 die volle Spanne — und auf glatter Strecke niemanden.
+RHYTHM_MAX = 0.06
+
 #: Rauschen im Tritt. Zwei langsam wandernde Wellen, deren Summe
 #: höchstens zwei Prozent ausmacht — sichtbar in der Wattanzeige,
 #: praktisch wirkungslos auf die Endzeit.
@@ -218,6 +241,38 @@ def intensity_for_distance(distance_km: float) -> float:
     return float(np.interp(distance_km, xs, ys))
 
 
+def roughness(grade: np.ndarray, step_m: float) -> np.ndarray:
+    """Antrittsdichte je Punkt, auf 0 bis 1 normiert.
+
+    Gezählt wird, wie oft die Steigung im Fenster die Schwelle von unten
+    nach oben kreuzt — ein Antritt eben. Ein zwanzig Kilometer langer
+    Pass zählt einen, ein Wellenritt derselben Länge ein Dutzend.
+    """
+    g = np.asarray(grade, dtype=np.float64)
+    drueber = g > RHYTHM_THRESHOLD
+    start = np.zeros_like(g)
+    start[1:] = (drueber[1:] & ~drueber[:-1]).astype(np.float64)
+
+    n = int(round(RHYTHM_WINDOW_M / step_m)) | 1
+    kern = np.ones(n)
+    antritte = np.convolve(start, kern, mode="same")
+    # Am Rand ist das Fenster kürzer — sonst zählte dort systematisch zu
+    # wenig, und Start und Ziel wären künstlich ruhig.
+    breite = np.convolve(np.ones_like(g), kern, mode="same") * step_m / 1000.0
+    return np.clip(antritte / breite / RHYTHM_REFERENCE, 0.0, 1.0)
+
+
+def rhythm_power_factor(rough: np.ndarray, rhythm_norm: np.ndarray) -> np.ndarray:
+    """Abzug auf die Zielleistung aus Rhythmuswert und Unruhe.
+
+    Einseitig: Bei ``rhythm_norm`` 1 kommt überall exakt 1,0 heraus, und
+    auf glatter Strecke (``rough`` null) ebenfalls — dort ist der Wert
+    für jeden wirkungslos.
+    """
+    fehlt = 1.0 - np.asarray(rhythm_norm, dtype=np.float64)
+    return 1.0 - RHYTHM_MAX * fehlt * np.asarray(rough, dtype=np.float64)
+
+
 def climb_ramp(grade: np.ndarray) -> np.ndarray:
     """Wie sehr dieses Gelände ein Anstieg ist: null flach, eins ab 8 %."""
     return np.clip(np.asarray(grade, dtype=np.float64) / CLIMB_GRADE_FULL, 0.0, 1.0)
@@ -306,6 +361,8 @@ class _Terrain:
     #: Wie sehr dieses Segment ein Anstieg ist — null im Flachen und
     #: bergab, eins ab acht Prozent. Daran hängt das Kletterprofil.
     climb_ramp: np.ndarray
+    #: Antrittsdichte, 0 bis 1. Daran hängt der Rhythmuswert.
+    roughness: np.ndarray
 
     @classmethod
     def build(cls, route: Route) -> _Terrain:
@@ -323,6 +380,7 @@ class _Terrain:
             power_factor=grade_power_factor(grade),
             brake_ramp=physics.brake_ramp(grade),
             climb_ramp=climb_ramp(grade),
+            roughness=roughness(grade, route.step_m),
         )
 
 
@@ -375,6 +433,8 @@ class LiveRace:
         self.start_dev = np.array([r.start_profile_dev for r in self.riders], dtype=np.float64)
         #: Der Endspurt, 0 bis 1.
         self.kick_norm = np.array([r.finish_kick_norm for r in self.riders], dtype=np.float64)
+        #: Der Rhythmuswert, 0 bis 1 — 1 heißt: kein Verlust.
+        self.rhythm_norm = np.array([r.rhythm_norm for r in self.riders], dtype=np.float64)
 
         intensity = self.config.intensity_factor
         if intensity is None:
@@ -540,6 +600,7 @@ class LiveRace:
         profil = profile_power_factor(terrain.climb_ramp[idx], self.profile_dev)
         profil = profil * start_profile_factor(anteil, self.start_dev)
         profil = profil * finish_kick_factor(anteil, self.kick_norm)
+        profil = profil * rhythm_power_factor(terrain.roughness[idx], self.rhythm_norm)
         power = self.base_power * self.fade_at(t) * terrain.power_factor[idx] * profil * noise
         power *= physics.downhill_power_taper(self.v_ms)
         power = np.where(active, power, 0.0)
@@ -876,6 +937,8 @@ class LiveRace:
             profil = profil * np.minimum(
                 start_profile_factor(anteil, -0.5), start_profile_factor(anteil, 0.5)
             )
+            # Beim Rhythmus der schlechteste denkbare Wert, also null.
+            profil = profil * rhythm_power_factor(terrain.roughness, 0.0)
             # Ebenso die schlechteste Position im Feld statt der des
             # schwächsten Fahrers.
             v = physics.steady_state_speed(
@@ -939,6 +1002,16 @@ class LiveRace:
         """
         return np.maximum(t_wall - self.start_offset_s, 0.0)
 
+    def roughness_at(self, dist_m: np.ndarray) -> np.ndarray:
+        """Die Unruhe des Geländes an der Stelle jedes Fahrers."""
+        idx = np.clip((np.asarray(dist_m) / self.route.step_m).astype(np.int64),
+                      0, self._n_cells - 1)
+        return self._terrain.roughness[idx]
+
+    def rhythm_factor_at(self, dist_m: np.ndarray) -> np.ndarray:
+        """Was der Rhythmus jeden Fahrer an seiner Stelle gerade kostet."""
+        return rhythm_power_factor(self.roughness_at(dist_m), self.rhythm_norm)
+
     def fade_at(self, t_wall: float) -> np.ndarray:
         """Der Verfallsfaktor zur Rennuhr ``t_wall``, für die Anzeige.
 
@@ -972,6 +1045,10 @@ __all__ = [
     "finish_kick_factor",
     "START_PROFILE_SPAN",
     "FINISH_KICK_MAX",
+    "roughness",
+    "rhythm_power_factor",
+    "RHYTHM_MAX",
+    "RHYTHM_REFERENCE",
     "PROFILE_SPAN",
     "FADE_SPAN_PER_10H",
     "FADE_SPAN_MAX",

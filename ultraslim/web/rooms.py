@@ -50,7 +50,7 @@ JUMP_STEP_S = 60.0
 #: Sortierschlüssel, die das Board kennt.
 SORT_FIELDS = frozenset(
     {"zeit", "nr", "name", "team", "rueckstand", "km", "biscp", "trend", "tempo",
-     "leistung", "vam", "vorrang", "verfall", "aero", "profil", "anlauf", "spurt"}
+     "leistung", "vam", "vorrang", "verfall", "aero", "profil", "anlauf", "spurt", "rhythmus"}
 )
 
 
@@ -594,6 +594,7 @@ class ViewSession:
                 "climb_profile": round(rider.climb_profile),
                 "start_profile": round(rider.start_profile),
                 "finish_kick": round(rider.finish_kick),
+                "rhythm": round(rider.rhythm),
                 "power_w": int(round(float(live.power_w[k]))) if started[k] and not finished[k] else 0,
                 "state": (
                     STATE_FINISHED if finished[k] else (STATE_WAITING if waiting else 0)
@@ -798,6 +799,8 @@ class ViewSession:
                 return -row["start_profile"]
             if key == "spurt":
                 return -row["finish_kick"]
+            if key == "rhythmus":
+                return -row["rhythm"]
             if key == "profil":
                 return -row["climb_profile"]
             if key == "verfall":
@@ -876,6 +879,14 @@ class ViewSession:
             "climb_profile": round(rider.climb_profile),
             "start_profile": round(rider.start_profile),
             "finish_kick": round(rider.finish_kick),
+            "rhythm": round(rider.rhythm),
+            # Die Unruhe des Geländes an seiner Stelle und was sie ihn
+            # gerade kostet — ohne die beiden wäre der Rhythmuswert eine
+            # Zahl ohne sichtbare Wirkung.
+            "roughness": round(float(live.roughness_at(dist)[i]), 2),
+            "rhythm_loss_pct": round(
+                (1.0 - float(live.rhythm_factor_at(dist)[i])) * 100.0, 1
+            ),
             # Die Fläche **mit** Aerowert — sonst stünde im Fokus eine
             # Zahl, die von der gerechneten abweicht.
             "area_m2": round(float(live.area[i]), 3),

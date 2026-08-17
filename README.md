@@ -1,10 +1,10 @@
 # UltraSim Slim
 
 Ultracycling-Simulator, schlanke Fassung. Ein Fahrer hat genau drei
-körperliche Eigenschaften — **FTP, Gewicht, Größe** — und sechs Zahlen
+körperliche Eigenschaften — **FTP, Gewicht, Größe** — und sieben Zahlen
 von 0 bis 100, die sagen, was er damit anfängt: **Abfahrt**,
-**Ausdauer**, **Aerodynamik**, **Kletterprofil**, **Startprofil** und
-**Endspurt**. Eine Strecke ist ein zweidimensionales Höhenprofil, und
+**Ausdauer**, **Aerodynamik**, **Kletterprofil**, **Startprofil**,
+**Endspurt** und **Rhythmus**. Eine Strecke ist ein zweidimensionales Höhenprofil, und
 alles andere folgt aus der Physik.
 
 Ein Rennen wird **nie vorberechnet**. Die Engine ist ein angehaltener
@@ -76,7 +76,8 @@ Fahrer vierzehn Prozent Zusatzmasse, beim schweren achteinhalb.
 
 ### Pacing
 
-Zielleistung = `FTP · IF · Tagesform · Verfall · Steigungsfaktor · Profil · Startprofil · Endspurt · Trittrauschen`.
+Zielleistung = `FTP · IF · Tagesform · Verfall · Steigungsfaktor · Profil ·
+Startprofil · Endspurt · Rhythmus · Trittrauschen`.
 
 - **IF** folgt der Renndistanz: 0,72 bei 300 km, 0,70 bei 400, 0,66 bei
   600, 0,64 bei 700, 0,62 bei 850, 0,60 bei 1000 km.
@@ -92,7 +93,7 @@ Zielleistung = `FTP · IF · Tagesform · Verfall · Steigungsfaktor · Profil �
 
 ### Der Abfahrtswert
 
-Die erste der sechs Zahlen, die nicht aus dem Körper folgen. **Bei 100 rollt er ungebremst aus, bei 0 nimmt er die
+Die erste der sieben Zahlen, die nicht aus dem Körper folgen. **Bei 100 rollt er ungebremst aus, bei 0 nimmt er die
 volle Drosselung mit** — höchstens **15 %** Tempo, hinterlegt als
 `DESCENT_THROTTLE_MAX` in `core/physics.py`.
 
@@ -268,6 +269,63 @@ Ziellinie voll da. `FINISH_KICK_MAX = 0,10`. Vor km 240 einer
 | Ostsee 300 km | 2,1 min |
 | Karpaten 700 km | 8,2 min |
 | Alpen 1000 km | 14,9 min |
+
+### Der Rhythmuswert
+
+Die einzige Eigenschaft, die an einer Streckengröße hängt, für die es
+vorher **keine Zahl gab**: der Unruhe. Ein 600-km-Wellenritt mit 5400
+Höhenmetern in vierhundert kurzen Rampen und dieselben 5400 Meter in
+vier langen Anstiegen waren im Modell bis dahin dasselbe.
+
+**Die Unruhe ist die Antrittsdichte**: wie oft die Steigung in einem
+Fenster von zehn Kilometern die Schwelle von drei Prozent von unten nach
+oben kreuzt, je Kilometer, normiert auf 0 bis 1 (Referenz 0,3 je km).
+
+Der naheliegende erste Versuch — die *Streuung* der Steigung — ist
+gemessen und verworfen worden: Über die sechs Kalenderstrecken liegt sie
+zwischen 0,68 und 1,02 Prozentpunkten, zwischen der flachen Ostsee und
+dem Hochgebirge also Faktor 1,5. Sie hätte einen Wert ergeben, der
+überall gleich viel kostet — eine Steuer, keine Streckeneigenschaft. Die
+Antrittsdichte trennt um Faktor sieben und in der richtigen Form:
+
+| Strecke | hm/km | mittlere Unruhe |
+|---|---|---|
+| Toskana 400 km | 9 | **0,58** |
+| Ardennen 600 km | 9 | 0,43 |
+| Pyrenäen 850 km | 15 | 0,28 |
+| Ostsee 300 km | 3 | 0,27 |
+| Karpaten 700 km | 15 | 0,21 |
+| Alpen 1000 km | 23 | **0,09** |
+
+Oben steht der Wellenritt, unten die flache Strecke (deren Kräusel die
+drei Prozent nie erreichen) **und** das Hochgebirge (wenige, sehr lange
+Anstiege). Genau die Buckelform, die „welliges Gelände" meint.
+
+Gewirkt wird einseitig, als Abzug — bei 100 kostet Unruhe nichts, bei 0
+das Maximum, und auf glatter Strecke niemanden:
+
+```
+Rhythmus = 1 − RHYTHM_MAX · (1 − Rhythmus/100) · Unruhe(x)
+```
+
+`RHYTHM_MAX = 0,06` in `core/engine.py`. Gemessen zwischen 100 und 0:
+
+| Strecke | Spanne | Anteil der Fahrzeit |
+|---|---|---|
+| Ostsee 300 km | 3,7 min | 0,66 % |
+| Toskana 400 km | 17,4 min | **2,13 %** |
+| Ardennen 600 km | 22,7 min | 1,80 % |
+| Karpaten 700 km | 23,0 min | 1,38 % |
+| Pyrenäen 850 km | 37,8 min | 1,83 % |
+| Alpen 1000 km | 18,1 min | 0,63 % |
+
+Im Fokusfenster steht der Wert in einer Zeile mit dem, was ihn erklärt:
+`RHYTHMUS 58 · UNRUHE 0,33 · BRUCH −0,8 %` — die Eigenschaft, das
+Gelände an dieser Stelle und der Abzug, der daraus gerade folgt.
+
+Weil der Wert ein reiner Abzug ist, dauern wellige Strecken im Mittel
+gut ein Prozent länger als vor seiner Einführung. Das ist der Preis der
+Einseitigkeit und bewusst so gewählt.
 
 Was es **nicht** gibt: W′-Bilanz, Verpflegung, Schlaf, Wetter, Wind,
 Defekte, Stürze, Taktik, Windschatten, Pausen — und keine
@@ -510,7 +568,7 @@ Kein Node, kein Build-Schritt. Alpine.js liegt als Datei bei.
 
 ```
 pip install -r requirements-dev.txt
-pytest -q                                   # 229 Tests
+pytest -q                                   # 234 Tests
 python -m ultraslim.app --no-browser        # Server ohne Browser
 ```
 

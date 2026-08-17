@@ -160,6 +160,20 @@
             <div class="cell"><span class="k"
                   title="Endspurt über das letzte Fünftel der Distanz. 0 heißt kein Endspurt, 100 der stärkste.">Spurt</span>
               <span class="v" x-text="focus.finish_kick"></span></div>
+
+            <!-- Die letzte Zeile erzählt eine Geschichte statt drei
+                 Einzelwerte: der Rhythmuswert, die Unruhe des Geländes
+                 hier und was beides zusammen gerade kostet. -->
+            <div class="cell"><span class="k"
+                  title="Wie gut er mit ständigem Auf und Ab zurechtkommt. Bei 100 kostet ihn unruhiges Gelände nichts, bei 0 am meisten.">Rhythmus</span>
+              <span class="v" x-text="focus.rhythm"></span></div>
+            <div class="cell"><span class="k"
+                  title="Antrittsdichte des Geländes an dieser Stelle, 0 bis 1: wie oft die Steigung hier drei Prozent von unten kreuzt.">Unruhe</span>
+              <span class="v" x-text="focus.roughness.toFixed(2)"></span></div>
+            <div class="cell"><span class="k"
+                  title="Was der Rhythmuswert im Gelände an dieser Stelle gerade an Leistung kostet.">Bruch</span>
+              <span class="v" :class="focus.rhythm_loss_pct > 0.05 ? 'bad' : ''"
+                    x-text="focus.rhythm_loss_pct > 0.05 ? `−${focus.rhythm_loss_pct.toFixed(1).replace('.', ',')} %` : '±0,0 %'"></span></div>
           </div>
         </div>
       </template>
