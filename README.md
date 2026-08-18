@@ -87,7 +87,22 @@ und der Heimvorteil auf die Grundleistung.
 - **Steigungsfaktor** steigt linear von 1,00 im Flachen auf 1,15 ab 8 %
   und fällt auf 0,55 ab 4 % Gefälle.
 - **Tagesform** ist ein Faktor je Fahrer und Rennen, N(1,00; 0,04),
-  begrenzt auf 0,88–1,12. Reproduzierbar aus dem Renn-Seed.
+  begrenzt auf 0,88–1,12. Reproduzierbar aus dem Renn-Seed. Sie ist kein
+  fester Wert über die Distanz, sondern **schwankt um ihren Startwert**:
+  An jeder Messstelle gilt ein neuer Ausschlag von höchstens **±2 %**
+  (`FORM_DRIFT`), gezogen vor dem Rennen in eine Tabelle
+  Fahrer × Messstelle. Wirksam ist immer der Eintrag der zuletzt
+  passierten Messstelle — vor der ersten gilt der Startwert. Weil die
+  Tabelle steht und nicht mitgezählt wird, zeigt ein Rücksprung in der
+  Wiedergabe denselben Wert wie beim ersten Durchlauf. Im Fokusfeld steht
+  der laufende Wert, der Startwert hängt als Titel daran. Gemessen über
+  alle sechs Strecken wandert ein Fahrer damit über **3,6 bis 3,8 %**
+  seines Startwerts — bei zwanzig Messstellen fast die volle Spanne, weil
+  jeder Zug unabhängig ist. Auf die Endzeit wirkt das **im Mittel gar
+  nicht** (gemessen ±0,05 min), es verschiebt sie nur: auf der Ostsee um
+  0,7 min Streuung (−3,2 … +4,8), auf den Karpaten um 2,8 min (−9,3 …
+  +7,3). Genau das war die Absicht — die Reihenfolge an den Messstellen
+  soll leben, das Ergebnis soll dadurch nicht zufälliger werden.
 - **Trittrauschen** sind zwei langsam wandernde Wellen, zusammen
   höchstens ±2 % — sichtbar in der Wattanzeige, praktisch wirkungslos auf
   die Endzeit.
@@ -568,15 +583,31 @@ knapp **50 Stunden**: Der letzte Starter rollt los, wenn der erste längst
 im Ziel ist. Beim Alpen-Rennen läuft die Rennuhr damit über hundert
 Stunden — bei 1000× sind das gut sechs Minuten Zuschauen.
 
-**Die Setzliste** folgt den Saisonpunkten aufsteigend: Wer in der Wertung
-führt, startet zuletzt und kennt die Zeit, die er schlagen muss. Vor dem
-ersten Rennen haben alle null Punkte — dann setzt die relative FTP die
-Reihenfolge, und sie trennt auch Punktgleichheit, die bei 300 Fahrern und
-Punkten bis Rang 150 die Regel ist, nicht die Ausnahme. Ganz zuletzt
-entscheidet die Startnummer, damit die Reihenfolge reproduzierbar bleibt.
+**Die Setzliste** folgt den Saisonpunkten absteigend: Rang eins der
+Wertung ist der Gesetzte. Vor dem ersten Rennen haben alle null Punkte —
+dann setzt die relative FTP die Reihenfolge, und sie trennt auch
+Punktgleichheit, die bei 300 Fahrern und Punkten bis Rang 150 die Regel
+ist, nicht die Ausnahme. Ganz zuletzt entscheidet die Startnummer, damit
+die Reihenfolge reproduzierbar bleibt.
 
 Die Setzliste ist dabei die Papierform, nicht das Ergebnis: Sie kennt
 Punkte, FTP und Gewicht, aber weder die Tagesform noch das Gelände.
+
+**Die Startgruppen** verteilen diese Rangliste in drei Blöcke — das Feld
+wird gedrittelt, bei 300 Fahrern also 100/100/100:
+
+| Rang in der Setzliste | Startplätze | Reihenfolge |
+|---|---|---|
+| 1–100 (die Gesetzten) | 101–200 | Rang 1 zuerst |
+| 101–200 | 1–100 | rückwärts, Rang 200 zuerst |
+| 201–300 | 201–300 | Rang 201 zuerst |
+
+Die Gesetzten starten damit **in der Mitte** statt am Ende: Vor ihnen
+liegt das Mittelfeld, das die Zeiten vorlegt, hinter ihnen das
+Schlussdrittel, das die letzten gut sechzehn Stunden des Startfensters
+füllt. Ein Sieger fährt so nicht mehr zwangsläufig gegen ein bereits
+komplettes Ergebnis, und die Zwischenwertung bleibt bis zum Schluss in
+Bewegung.
 
 ### Wo gemessen wird
 
@@ -604,6 +635,22 @@ Zwei Wertungen im Board:
   wandert nach unten, sobald seine Uhr eine gefahrene Zeit überholt. So
   steht es an der Strecke, und so steht es hier.
 
+  Solange seine Uhr die **Bestzeit noch nicht erreicht** hat, steht er
+  ganz oben — und dort untereinander **nach der Entfernung zur
+  Messstelle**, der Nächste zuerst. Das ist die einzige Reihenfolge, die
+  in diesem Moment etwas aussagt: Zwei Uhren bei zwei Stunden sagen
+  nichts, aber zwei Kilometer gegen dreißig sagen alles. Überholt die Uhr
+  die Bestzeit, fällt er in die gewohnte Sortierung nach Zeit zurück.
+
+  Wer noch keinen Rang hat, steht **hervorgehoben** — dieselbe
+  Zeilenfarbe wie der Fokusfahrer, nur ohne dessen Balken. Man sieht auf
+  einen Blick, wer sich noch einranken muss. Die Markierung erlischt
+  nicht in dem Moment, in dem er durchfährt, sondern **fünf Spielminuten
+  danach**: Genau die Zeile, die eben ihren Platz gefunden hat, bleibt
+  noch kurz sichtbar. Gerechnet wird das aus der aufgezeichneten
+  Splitzeit, nicht aus einem mitlaufenden Zähler — ein Rücksprung zeigt
+  darum dieselbe Markierung wie der erste Durchlauf.
+
   In der Wertung steht dabei nur, wer die **vorherige** Messstelle schon
   hinter sich hat; bei der ersten genügt der Start. Ohne diese Schranke
   stand die Tabellenspitze dauerhaft voll mit Fahrern, die vor fünf
@@ -616,7 +663,10 @@ Zwei Wertungen im Board:
   ohne das stimmte die Tabelle eine ganze Sekunde lang sichtbar nicht.
   Aus demselben Grund laufen Kilometer und Restmeter mit, statt im
   Sekundentakt zu springen. Gerechnet wird dabei nichts: Der Vorlauf ist
-  auf das nächste erwartete Bild gedeckelt, genau wie bei der Uhr.
+  auf das nächste erwartete Bild gedeckelt, genau wie bei der Uhr. Die
+  **Restmeter zählen dabei auch für die Sortierung mit** — sonst sortierte
+  der Kopf der Tabelle nach einem sechzehn Minuten alten Stand, während
+  die Spalte daneben schon den neuen zeigt.
 
   Eine **Rangziffer trägt nur, wer die Messstelle gefahren hat.** Die
   laufenden Uhren reihen sich weiter live zwischen die gemessenen Zeiten
@@ -722,7 +772,7 @@ Kein Node, kein Build-Schritt. Alpine.js liegt als Datei bei.
 
 ```
 pip install -r requirements-dev.txt
-pytest -q                                   # 250 Tests
+pytest -q                                   # 263 Tests
 python -m ultraslim.app --no-browser        # Server ohne Browser
 ```
 

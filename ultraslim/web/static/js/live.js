@@ -296,14 +296,46 @@ function raceLive(raceId) {
       const delta = this.sortDelta;
       const zeit = (r) =>
         r.t_s === null ? Infinity : r.t_s + (r.running ? delta : 0);
-      const sortiert = raw.slice().sort((a, b) => zeit(a) - zeit(b));
-      // In der Splitwertung gehört die Rangziffer zur gemessenen Zeit
-      // und nicht zur Zeile: Sie wandert nicht mit, wenn eine laufende
-      // Uhr an einem Gemessenen vorbeizieht. In der Bergwertung ist der
-      // Rang die Position — dort wird weitergereicht.
-      if (this.isSplitMode) return sortiert;
-      const raenge = raw.map((r) => r.rank).sort((a, b) => a - b);
-      return sortiert.map((r, i) => (r.rank === raenge[i] ? r : { ...r, rank: raenge[i] }));
+
+      if (!this.isSplitMode) {
+        const sortiert = raw.slice().sort((a, b) => zeit(a) - zeit(b));
+        const raenge = raw.map((r) => r.rank).sort((a, b) => a - b);
+        return sortiert.map((r, i) => (r.rank === raenge[i] ? r : { ...r, rank: raenge[i] }));
+      }
+
+      /* Splitwertung: dieselbe Regel wie auf dem Server, nur mit der
+       * weitergezählten Uhr. Wer die Messstelle noch vor sich hat und
+       * die Bestzeit noch nicht erreicht hat, steht oben — geordnet
+       * nach der **Entfernung** zur Messstelle, nicht nach der Uhr.
+       * Sobald seine Uhr die Bestzeit überholt, fällt er in die normale
+       * Zeitsortierung. Weil der Client die Uhr zwischen zwei Bildern
+       * weiterzählt, passiert dieser Wechsel hier sichtbar und nicht
+       * erst beim nächsten Bild.
+       */
+      const gemessen = raw.filter((r) => !r.provisional && r.t_s !== null);
+      const best = gemessen.length ? Math.min(...gemessen.map((r) => r.t_s)) : Infinity;
+      const offen = (r) => r.running && r.t_s !== null && zeit(r) < best;
+      // Die Restmeter zählen im selben Takt mit wie die Uhr. Ohne das
+      // sortierte die Tabelle nach einem bis zu sechzehn Minuten alten
+      // Stand, während die Spalte daneben schon den neuen zeigte — bei
+      // 1000× standen sichtbar 1,3 km über 4,4 km über 1,8 km.
+      const rest = (r) => {
+        if (r.to_next_m === null || r.to_next_m === undefined) return 1e12;
+        return Math.max(r.to_next_m - (r.v_kmh / 3.6) * delta, 0);
+      };
+
+      return raw
+        .map((r) => {
+          const o = offen(r);
+          if (o === !!r.open) return r;
+          // Der Server hat den Zustand eines älteren Augenblicks
+          // geschickt — hier zählt der von jetzt.
+          return { ...r, open: o, spotlight: o || (r.spotlight && !r.running) };
+        })
+        .sort((a, b) => {
+          if (a.open !== b.open) return a.open ? -1 : 1;
+          return a.open ? rest(a) - rest(b) : zeit(a) - zeit(b);
+        });
     },
     get pinnedRows() { return this.board && this.board.pinned ? this.board.pinned : []; },
     //: Der Abstand zwischen den beiden angehefteten Fahrern — das

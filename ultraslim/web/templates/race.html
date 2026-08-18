@@ -152,8 +152,11 @@
               <span class="v" x-text="focus.height_cm"></span></div>
             <div class="cell"><span class="k">rel. FTP<span class="u">W/kg</span></span>
               <span class="v" x-text="focus.w_per_kg"></span></div>
-            <div class="cell"><span class="k" title="Zufallsfaktor auf die FTP, einmal je Rennen gezogen">Tagesform<span class="u">%</span></span>
-              <span class="v" x-text="focus.form_pct"></span></div>
+            <div class="cell"><span class="k"
+                  :title="`Zufallsfaktor auf die FTP. Beim Start ${focus.form_start_pct} %, danach an jeder Zeitmessung neu um diesen Wert herum gewürfelt.`">Tagesform<span class="u">%</span></span>
+              <span class="v"
+                    :class="focus.form_pct > focus.form_start_pct + 0.05 ? 'good' : focus.form_pct < focus.form_start_pct - 0.05 ? 'bad' : ''"
+                    x-text="focus.form_pct"></span></div>
             <div class="cell"><span class="k"
                   title="Frontalfläche aus Größe und Gewicht, mit dem Aerowert verrechnet — die Fläche, mit der die Physik rechnet.">Fläche<span class="u">m²</span></span>
               <span class="v" x-text="focus.area_m2.toFixed(3)"></span></div>
@@ -435,7 +438,7 @@
 
           <template x-for="row in rows" :key="row.entry_id">
             <tr class="clickable"
-                :class="{focus: focus && row.entry_id === focus.entry_id, provisional: row.provisional, pinned: isPinned(row.entry_id), waiting: row.state === -1}"
+                :class="{focus: focus && row.entry_id === focus.entry_id, spotlight: row.spotlight, provisional: row.provisional, pinned: isPinned(row.entry_id), waiting: row.state === -1}"
                 @click="setFocus(row.entry_id)">
               <td class="rank" x-text="row.rank || '–'"></td>
               <td class="bib" x-text="row.bib"></td>

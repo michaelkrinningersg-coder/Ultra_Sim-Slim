@@ -68,6 +68,15 @@ DESCENT_POWER_LOSS = 0.45   # −45 %, also 0,55×
 FORM_SD = 0.04
 FORM_RANGE = (0.88, 1.12)
 
+#: Die Tagesform steht nicht still: An **jeder Zeitmessung** wird sie neu
+#: gewürfelt, innerhalb dieser Spanne um den **Startwert**. Sie wandert
+#: also um ihn herum, statt fortzulaufen — ein Fahrer mit 1,04 bleibt ein
+#: guter Tag, aber kein gleichmäßiger.
+#:
+#: Zwei Prozent sind halb so viel wie die Streuung der Tagesform selbst:
+#: spürbar zwischen zwei Messstellen, ohne die Papierform umzuwerfen.
+FORM_DRIFT = 0.02
+
 #: Der Ausdauerwert, in Zahlen. Er verschiebt nicht die Leistung, er
 #: verschiebt ihren **Verlauf**: Je länger ein Fahrer unterwegs ist,
 #: desto weiter geht die Schere zwischen den Ausdauernden und den
@@ -382,6 +391,43 @@ def rhythm_power_factor(rough: np.ndarray, rhythm_norm: np.ndarray) -> np.ndarra
     return 1.0 - RHYTHM_MAX * fehlt * np.asarray(rough, dtype=np.float64)
 
 
+def _start_groups(n: int) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Die drei Startgruppen als Indizes in die Rangliste (Bester zuerst).
+
+    Bei dreihundert Fahrern sind das die Ränge 1–100, 101–200 und
+    201–300; bei kleineren Feldern drei möglichst gleiche Drittel,
+    damit dieselbe Regel auch für ein Testfeld aufgeht.
+    """
+    erste = (n + 2) // 3
+    zweite = (n + 1) // 3
+    return (
+        np.arange(0, erste),
+        np.arange(erste, erste + zweite),
+        np.arange(erste + zweite, n),
+    )
+
+
+def _start_slots(n: int) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Wohin jede Gruppe im Startfenster kommt.
+
+    - Die **Gesetzten** starten in der **Mitte** — Plätze 101 bis 200 bei
+      dreihundert Fahrern, in ihrer Rangfolge.
+    - Die **zweite Gruppe** startet **zuerst**, und zwar **rückwärts**:
+      Der Schwächste der Gruppe rollt als Erster los, der Stärkste
+      unmittelbar vor den Gesetzten.
+    - Die **dritte Gruppe** startet **zuletzt**, in ihrer Rangfolge.
+
+    Der Sinn: Die Favoriten fahren gegen Zeiten, die schon stehen, und
+    die Entscheidung fällt nicht erst, wenn das halbe Feld im Ziel ist.
+    """
+    erste, zweite, dritte = (len(g) for g in _start_groups(n))
+    return (
+        np.arange(zweite, zweite + erste, dtype=np.float64),
+        np.arange(zweite - 1, -1, -1, dtype=np.float64),
+        np.arange(zweite + erste, n, dtype=np.float64),
+    )
+
+
 def climb_ramp(grade: np.ndarray) -> np.ndarray:
     """Wie sehr dieses Gelände ein Anstieg ist: null flach, eins ab 8 %."""
     return np.clip(np.asarray(grade, dtype=np.float64) / CLIMB_GRADE_FULL, 0.0, 1.0)
@@ -587,6 +633,12 @@ class LiveRace:
         # steht erst fest, wenn der Fahrer dort ist. Gespeichert wird
         # deshalb der Wurf, nicht das Ergebnis; entschieden wird beim
         # Durchfahren und bleibt trotzdem reproduzierbar.
+        # Die Schwankung der Tagesform: eine Tabelle je Fahrer und
+        # Messstelle, wie beim Schub aus dem Renn-Seed gezogen. Gültig
+        # ist immer der Eintrag der zuletzt passierten Messstelle, vor
+        # der ersten der Startwert selbst.
+        self.form_drift = rng.uniform(-FORM_DRIFT, FORM_DRIFT, (n, n_splits))
+
         self.hunger_roll = rng.random((n, n_splits))
         self.hunger_penalty = rng.uniform(*HUNGER_PENALTY_W, (n, n_splits))
         schwach = np.argsort(wkg, kind="stable")[:HUNGER_SPARE_WEAKEST]
@@ -720,22 +772,21 @@ class LiveRace:
         self._gen = self._run()
 
     def _start_order(self) -> np.ndarray:
-        """Startposition je Fahrer: Saisonpunkte aufsteigend, dann FTP.
+        """Startposition je Fahrer, in drei Startgruppen.
 
-        Wer in der Saisonwertung vorn steht, startet zuletzt — die
-        Entscheidung fällt damit am Ende der Übertragung und nicht in
-        ihrer Mitte. Vor dem ersten Rennen haben alle null Punkte, und
-        dann setzt die relative FTP die Reihenfolge; sie trennt auch
-        Punktgleichheit, die bei dreihundert Fahrern und einer
-        Punkteliste bis Rang 150 die Regel ist, nicht die Ausnahme.
+        Gesetzt wird nach **Saisonpunkten absteigend, dann relativer
+        FTP** — vor dem ersten Rennen haben alle null Punkte, und dann
+        entscheidet die FTP allein. Sie trennt auch Punktgleichheit, die
+        bei dreihundert Fahrern und einer Punkteliste bis Rang 150 die
+        Regel ist, nicht die Ausnahme; ganz zuletzt die Startnummer,
+        damit die Reihenfolge reproduzierbar bleibt.
+
+        Aus dieser Rangliste werden drei Gruppen, siehe
+        ``_start_groups``.
 
         Die Setzliste ist die Papierform, nicht das Ergebnis: Sie kennt
         Punkte, FTP und Gewicht, aber nicht die Tagesform und nicht das
-        Gelände. Der Gesetzte startet zuletzt und verliert trotzdem
-        regelmäßig.
-
-        Ganz zuletzt entscheidet die Startnummer, damit die Reihenfolge
-        reproduzierbar ist.
+        Gelände.
         """
         punkte_je_fahrer = self.config.season_points or {}
         punkte = np.array(
@@ -743,10 +794,15 @@ class LiveRace:
         )
         wkg = np.array([r.ftp_w / r.weight_kg for r in self.riders], dtype=np.float64)
         bibs = np.array([r.bib for r in self.riders])
-        # ``lexsort`` sortiert nach dem *letzten* Schlüssel zuerst.
-        gesetzt = np.lexsort((bibs, wkg, punkte))
-        positions = np.empty(len(self.riders), dtype=np.float64)
-        positions[gesetzt] = np.arange(len(self.riders), dtype=np.float64)
+        # ``lexsort`` sortiert nach dem *letzten* Schlüssel zuerst. Das
+        # Ergebnis ist die Setzliste von schwach nach stark; umgedreht
+        # steht der Gesetzte vorn.
+        rangliste = np.lexsort((bibs, wkg, punkte))[::-1]
+
+        n = len(self.riders)
+        positions = np.empty(n, dtype=np.float64)
+        for gruppe, plaetze in zip(_start_groups(n), _start_slots(n)):
+            positions[rangliste[gruppe]] = plaetze
         return positions
 
     # ------------------------------------------------------------------
@@ -816,7 +872,12 @@ class LiveRace:
         # Der Schub liegt auf der FTP, nicht auf der Tretleistung —
         # deshalb geht er denselben Weg wie sie: mal Intensitätsfaktor,
         # mal Tagesform.
-        grund = self.base_power + self.energy_bonus_w * self.intensity_factor * self.form
+        # Die Tagesform schwankt — der Faktor gilt für die Grundleistung
+        # ebenso wie für den Schub, der ja auf der FTP liegt.
+        schwankung = self.form_for(self.next_split) / self.form
+        grund = (
+            self.base_power + self.energy_bonus_w * self.intensity_factor * self.form
+        ) * schwankung
         power = grund * self.fade_at(t) * terrain.power_factor[idx] * profil * noise
         power *= physics.downhill_power_taper(self.v_ms)
         power = np.where(active, power, 0.0)
@@ -1312,6 +1373,18 @@ class LiveRace:
         """Derselbe Schub, aber zur Uhr des Zuschauers."""
         return self._energy_for(np.count_nonzero(self.reached_mask(t_wall), axis=1))
 
+    def form_for(self, passiert: np.ndarray) -> np.ndarray:
+        """Die Tagesform, wie sie nach so vielen Messstellen steht."""
+        passiert = np.asarray(passiert)
+        zeile = np.arange(len(self.riders))
+        letzte = np.clip(passiert - 1, 0, self._n_splits - 1)
+        drift = np.where(passiert >= 1, self.form_drift[zeile, letzte], 0.0)
+        return self.form * (1.0 + drift)
+
+    def form_at(self, t_wall: float) -> np.ndarray:
+        """Dieselbe Tagesform, aber zur Uhr des Zuschauers."""
+        return self.form_for(np.count_nonzero(self.reached_mask(t_wall), axis=1))
+
     def _energy_for(self, passiert: np.ndarray) -> np.ndarray:
         """Schub minus Hungerast, beides in Watt auf die FTP."""
         passiert = np.asarray(passiert)
@@ -1382,6 +1455,8 @@ __all__ = [
     "grade_power_factor",
     "endurance_fade",
     "climb_ramp",
+    "_start_groups",
+    "_start_slots",
     "profile_power_factor",
     "start_profile_factor",
     "finish_kick_factor",
@@ -1396,6 +1471,7 @@ __all__ = [
     "ALTITUDE_START_M",
     "ALTITUDE_FULL_M",
     "RHYTHM_REFERENCE",
+    "FORM_DRIFT",
     "ENERGY_EVENT_P",
     "ENERGY_BONUS_W",
     "ENERGY_EXCLUDE_TOP",

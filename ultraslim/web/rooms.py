@@ -47,6 +47,13 @@ JUMP_LIMIT_S = 12.0 * 3600.0
 #: heißt weniger Python-Runden um dieselbe Rechenarbeit.
 JUMP_STEP_S = 60.0
 
+#: So lange bleibt eine Zeile nach dem Durchfahren der Messstelle noch
+#: hervorgehoben — in **Rennminuten**, nicht in Echtzeit. Bei 1000-fachem
+#: Zeitraffer sind das ein Drittel Sekunde Bildschirmzeit, bei 1× fünf
+#: Minuten: In beiden Fällen genau der Moment, in dem sich die neue Zeit
+#: in die Liste einsortiert.
+SPOTLIGHT_AFTER_SPLIT_S = 5.0 * 60.0
+
 #: Sortierschlüssel, die das Board kennt.
 SORT_FIELDS = frozenset(
     {"zeit", "nr", "name", "team", "rueckstand", "km", "biscp", "trend", "tempo",
@@ -560,6 +567,19 @@ class ViewSession:
                 drin = aktuell >= 0
                 vam[drin] = alle_vam[np.nonzero(drin)[0], aktuell[drin]]
 
+        # Wer in der Splitwertung noch **vor** der Messstelle liegt und
+        # dessen Uhr die Bestzeit noch nicht erreicht hat, ist noch nicht
+        # eingereiht: Er kann sie noch schlagen, und wo er landet,
+        # entscheidet sich erst an der Messstelle. Solche Zeilen werden
+        # nach der **Entfernung** zur Messstelle geordnet und
+        # hervorgehoben.
+        if self.mode == "split":
+            offen = running & (times < best) if np.any(has) else running
+            frisch = self._frisch_durch(t, has)
+        else:
+            offen = np.zeros(len(room.riders), dtype=bool)
+            frisch = np.zeros(len(room.riders), dtype=bool)
+
         # Der Verfall: Anteil der Startleistung, den ein Fahrer gerade
         # tritt. Im Ziel bleibt er stehen — die Uhr des Zuschauers läuft
         # weiter, der Fahrer nicht. Wer noch wartet, hat keinen.
@@ -584,6 +604,12 @@ class ViewSession:
                 "t_s": None if waiting else round(float(times[k]), 1),
                 "gap_s": None if waiting else round(float(gaps[k]), 1),
                 "running": bool(running[k]),
+                #: Noch nicht eingereiht — die Uhr ist unter der Bestzeit
+                #: und die Messstelle noch vor ihm.
+                "open": bool(offen[k]),
+                #: Hervorgehoben: noch nicht eingereiht oder eben erst
+                #: durchgefahren.
+                "spotlight": bool(offen[k] or frisch[k]),
                 "provisional": bool(provisional[k]) and not waiting,
                 "dist_km": round(float(dist[k]) / 1000.0, 2),
                 "to_next_m": None if np.isnan(to_next[k]) else int(max(to_next[k], 0)),
@@ -609,6 +635,18 @@ class ViewSession:
                 "rank": 0,
             }
         return rows
+
+    def _frisch_durch(self, t: float, has) -> np.ndarray:
+        """Wer die gewählte Messstelle gerade eben passiert hat.
+
+        Gemessen wird in **Rennuhr**: Die Splitzeit ist Eigenzeit, der
+        Startversatz kommt dazu, und der Abstand zur Uhr des Zuschauers
+        sagt, wie lange es her ist.
+        """
+        live = self.room.live
+        durch = live.split_times[:, self.split_idx] + live.start_offset_s
+        seither = t - durch
+        return has & (seither >= 0.0) & (seither < SPOTLIGHT_AFTER_SPLIT_S)
 
     def _verfall(self, t: float, finished) -> np.ndarray:
         """Der Verfallsfaktor, im Ziel eingefroren.
@@ -826,10 +864,21 @@ class ViewSession:
             if key == "vorrang":
                 # Wer noch keine Zeitmessung hinter sich hat, steht hinten.
                 return row["prev_rank"] if row["prev_rank"] is not None else 10**6
-            # 'zeit': die Wertung selbst. Rein nach der Zeit, ohne
-            # gemessene und laufende zu trennen — genau darum kann eine
-            # laufende Uhr einen Fahrer nach hinten schieben.
-            return row["t_s"]
+            # 'zeit': die Wertung selbst.
+            #
+            # Zwei Gruppen, und die Trennlinie ist die **Bestzeit**: Wer
+            # die Messstelle noch vor sich hat und dessen Uhr sie noch
+            # nicht erreicht hat, kann sie noch schlagen — wo er landet,
+            # hängt dann nicht an seiner Uhr, sondern daran, **wie weit
+            # er noch hat**. Diese Zeilen stehen oben, nach Entfernung
+            # geordnet: der Nächste zuerst.
+            #
+            # Sobald seine Uhr die Bestzeit überholt, ist die Frage
+            # entschieden, und er reiht sich wie jeder andere nach der
+            # Zeit ein.
+            if row.get("open"):
+                return (0.0, row["to_next_m"] if row["to_next_m"] is not None else 1e12)
+            return (1.0, row["t_s"])
 
         items = list(rows.values())
         if key in self._TIME_SORTS:
@@ -930,7 +979,10 @@ class ViewSession:
             "v_kmh": round(float(v[i]) * 3.6, 1),
             "grade_pct": round(float(grade[i]) * 100.0, 1),
             "power_w": int(round(float(live.power_w[i]))) if started[i] and not finished[i] else 0,
-            "form_pct": round(float(live.form[i]) * 100.0, 1),
+            # Die Tagesform, wie sie **jetzt** steht: Sie schwankt an
+            # jeder Messstelle um den Startwert.
+            "form_pct": round(float(live.form_at(t)[i]) * 100.0, 1),
+            "form_start_pct": round(float(live.form[i]) * 100.0, 1),
             "state": (
                 STATE_FINISHED if finished[i] else (0 if started[i] else STATE_WAITING)
             ),

@@ -199,6 +199,11 @@ td { padding: .18rem .35rem; border-bottom: 1px solid #1a2131; }
 .board thead th { position: sticky; top: 44px; z-index: 5; background: var(--bg-panel); }
 .board tbody tr { transition: background-color .25s ease; }
 .board tr.focus { background: #2a2410; box-shadow: inset 3px 0 0 var(--accent); }
+/* Wer sich noch einreihen muss — und wer es gerade getan hat.
+   Derselbe Grund wie beim ausgewählten Fahrer, damit die Zeilen
+   sofort ins Auge fallen; den Balken links behält der Fokus für sich,
+   sonst wüsste man nicht mehr, wen man ausgewählt hat. */
+.board tr.spotlight { background: #2a2410; }
 .board tr.leader-row { background: #101a26; }
 .board tr.provisional td { color: var(--fg-faint); font-style: italic; }
 .board tr.neighbour { background: #141b28; }

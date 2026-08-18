@@ -104,15 +104,16 @@ def test_startliste_traegt_die_startzeiten(laufendes_rennen):
     assert {"ftp_w", "weight_kg", "height_cm", "nation", "team", "color"} <= set(eintraege[0])
 
 
-def test_der_staerkste_startet_zuletzt(laufendes_rennen):
-    """Setzliste nach relativer FTP: der Schwächste rollt zuerst los."""
+def test_der_staerkste_startet_in_der_mitte(laufendes_rennen):
+    """Setzliste nach relativer FTP: die Gesetzten rollen im mittleren Block los."""
     eintraege = laufendes_rennen.get(f"/api/race/{RACE_ID}/startlist").json()["entries"]
     nach_start = sorted(eintraege, key=lambda e: e["start_offset_s"])
     wkg = [e["w_per_kg"] for e in nach_start]
-    assert wkg == sorted(wkg), "die Startfolge muss der relativen FTP folgen"
     assert nach_start[0]["start_offset_s"] == 0.0
     assert nach_start[-1]["start_offset_s"] == 299 * 600.0
-    assert wkg[-1] > wkg[0] + 1.5, "zwischen erstem und letztem Starter liegen Welten"
+    # Der stärkste Fahrer des Feldes eröffnet den mittleren Block.
+    assert wkg.index(max(wkg)) == 100
+    assert max(wkg) > min(wkg) + 1.5, "zwischen stärkstem und schwächstem liegen Welten"
 
 
 def test_erstes_bild_zeigt_nur_den_ersten_starter(token, laufendes_rennen):
@@ -929,3 +930,83 @@ def test_die_schubmeldung_steht_im_ticker(token, laufendes_rennen):
     energie = [e for e in alle if e["type"] == "ENERGY"]
     for e in energie:
         assert "energiegeladen" in e["text"] and " W bis " in e["text"]
+
+
+def test_offene_fahrer_stehen_oben_und_nach_entfernung(token, laufendes_rennen):
+    """Wer die Bestzeit noch schlagen kann, steht vorn — nach Restweg.
+
+    Die Uhr sagt in diesem Fall nichts: Zwei Fahrer mit derselben
+    laufenden Zeit sind verschieden weit von der Messstelle entfernt,
+    und genau das entscheidet, ob sie die Bestzeit noch holen.
+    """
+    steuern = lambda a, v: laufendes_rennen.post(  # noqa: E731
+        f"/api/playback/{token}/control", json={"action": a, "value": v}
+    )
+    steuern("mode", "split")
+    steuern("split_follow", False)
+    steuern("seek", 20 * 3600)
+    steuern("split", 8)
+    zeilen = laufendes_rennen.get(f"/api/playback/{token}/frame").json()["board"]["rows"]
+
+    offen = [z for z in zeilen if z["open"]]
+    assert offen, "Testaufbau: es muss offene Fahrer geben"
+    assert zeilen[: len(offen)] == offen, "sie stehen geschlossen oben"
+
+    wege = [z["to_next_m"] for z in offen]
+    assert wege == sorted(wege), "der Nächste zuerst"
+
+    gemessen = [z for z in zeilen if not z["provisional"]]
+    beste = min(z["t_s"] for z in gemessen)
+    for z in offen:
+        assert z["running"] and z["t_s"] < beste, "offen heißt: kann sie noch schlagen"
+
+    # Ab der Bestzeit zählt wieder die Uhr.
+    danach = [z for z in zeilen if not z["open"]]
+    zeiten = [z["t_s"] for z in danach]
+    assert zeiten == sorted(zeiten)
+
+
+def test_die_markierung_erlischt_fuenf_rennminuten_nach_der_messstelle(token, laufendes_rennen):
+    steuern = lambda a, v: laufendes_rennen.post(  # noqa: E731
+        f"/api/playback/{token}/control", json={"action": a, "value": v}
+    )
+    steuern("mode", "split")
+    steuern("split_follow", False)
+    steuern("split", 8)
+
+    def markiert(stunden):
+        steuern("seek", stunden * 3600)
+        zeilen = laufendes_rennen.get(f"/api/playback/{token}/frame").json()["board"]["rows"]
+        return {z["entry_id"]: z for z in zeilen if z["spotlight"]}
+
+    irgendwann = markiert(20)
+    assert irgendwann, "Testaufbau: es muss markierte Zeilen geben"
+    for zeile in irgendwann.values():
+        # Entweder noch offen — oder eben erst durchgefahren.
+        assert zeile["open"] or not zeile["provisional"]
+
+    # Wer durch ist und markiert, ist es nur kurz: keine markierte
+    # gemessene Zeile darf länger als fünf Rennminuten zurückliegen.
+    spaet = markiert(40)
+    for zeile in spaet.values():
+        assert zeile["open"] or not zeile["provisional"]
+
+
+def test_die_startgruppen_stehen_in_der_startliste(laufendes_rennen):
+    """Gesetzte in der Mitte, zweite Gruppe rückwärts, dritte hinten."""
+    eintraege = laufendes_rennen.get(f"/api/race/{RACE_ID}/startlist").json()["entries"]
+    nach_start = sorted(eintraege, key=lambda e: e["start_offset_s"])
+    wkg = [e["w_per_kg"] for e in nach_start]
+
+    erste_hundert = wkg[:100]
+    mitte = wkg[100:200]
+    letzte = wkg[200:]
+
+    # Gruppe zwei fährt vorweg, und zwar von schwach nach stark.
+    assert erste_hundert == sorted(erste_hundert)
+    # Die Gesetzten in der Mitte sind stärker als alle davor.
+    assert min(mitte) > max(erste_hundert)
+    # Und die dritte Gruppe schwächer als beide.
+    assert max(letzte) < min(erste_hundert)
+    # Die Gesetzten stehen von stark nach schwach: Rang 1 eröffnet den Block.
+    assert mitte == sorted(mitte, reverse=True)

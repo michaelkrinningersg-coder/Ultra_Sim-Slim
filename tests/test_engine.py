@@ -23,6 +23,7 @@ from ultraslim.core.engine import (
     RIVAL_PAIRS,
     TEAM_SPIRIT_GAIN,
     FADE_SPAN_MAX,
+    FORM_DRIFT,
     FADE_SPAN_PER_10H,
     FINISH_KICK_MAX,
     FINISH_KICK_START,
@@ -34,6 +35,8 @@ from ultraslim.core.engine import (
     TICKS_PER_YIELD,
     LiveRace,
     RaceConfig,
+    _start_groups,
+    _start_slots,
     altitude_power_factor,
     altitude_ramp,
     climb_ramp,
@@ -124,26 +127,29 @@ def test_rueckblick_ist_moeglich_und_monoton():
 # Einzelstart
 # ----------------------------------------------------------------------
 def test_startabstand_betraegt_zehn_minuten():
-    # Die Testfahrer haben aufsteigende FTP bei gleichem Gewicht — die
-    # Setzliste läuft damit parallel zur Fahrer-Reihenfolge.
+    # Die Startgruppen mischen die Reihenfolge, den Takt aber nicht:
+    # jeder Platz genau einmal, alle zehn Minuten einer.
     race = rennen(n=6)
-    assert np.array_equal(race.start_offset_s, np.arange(6) * 600.0)
+    assert sorted(race.start_offset_s.tolist()) == [i * 600.0 for i in range(6)]
 
 
-def test_setzliste_stellt_den_staerksten_nach_hinten():
+def test_setzliste_stellt_den_staerksten_in_die_mitte():
     """Ohne Saisonpunkte entscheidet die relative FTP."""
     teams, riders = kleines_feld(4)
     # Reihenfolge der Liste bewusst gegen die Stärke gedreht.
     gedreht = list(reversed(riders))
     race = LiveRace(kurzstrecke(), gedreht, teams, RaceConfig(name="Setzliste", seed=1))
     wkg = [r.ftp_w / r.weight_kg for r in gedreht]
-    reihenfolge = np.argsort(race.start_offset_s)
-    assert [wkg[i] for i in reihenfolge] == sorted(wkg)
+    reihenfolge = list(np.argsort(race.start_offset_s))
+    nach_start = [wkg[i] for i in reihenfolge]
+    # Vier Fahrer teilen sich in 2 Gesetzte, 1 im Mittelblock, 1 im Schluss.
+    # Startplatz 0 gehört Rang 3, dann folgen Rang 1 und 2, zuletzt Rang 4.
+    assert nach_start == [sorted(wkg)[1], sorted(wkg)[3], sorted(wkg)[2], sorted(wkg)[0]]
     assert sorted(race.start_offset_s.tolist()) == [0.0, 600.0, 1200.0, 1800.0]
 
 
 def test_saisonpunkte_setzen_vor_der_ftp():
-    """Wer in der Wertung führt, startet zuletzt — auch als Schwächster."""
+    """Wer in der Wertung führt, eröffnet den Mittelblock — auch als Schwächster."""
     teams, riders = kleines_feld(4)
     # Fahrer 0 hat die niedrigste FTP, aber die meisten Punkte;
     # Fahrer 3 hat die höchste FTP und noch keine.
@@ -153,10 +159,12 @@ def test_saisonpunkte_setzen_vor_der_ftp():
         RaceConfig(name="Setzliste", seed=1, season_points=punkte),
     )
     reihenfolge = list(np.argsort(race.start_offset_s))
-    assert reihenfolge[0] == 3, "ohne Punkte geht es zuerst raus"
-    assert reihenfolge[-1] == 0, "der Führende der Wertung startet zuletzt"
-    # Punktgleichstand trennt die relative FTP aufsteigend: 1 vor 2.
-    assert reihenfolge[1:3] == [1, 2]
+    assert reihenfolge[-1] == 3, "ohne Punkte geht es als Letzter raus"
+    assert reihenfolge[1] == 0, "der Führende der Wertung eröffnet den Mittelblock"
+    # Punktgleichstand trennt die relative FTP absteigend: 2 vor 1.
+    # Rang 2 steht hinter dem Führenden, Rang 3 eröffnet das Rennen.
+    assert reihenfolge[2] == 2
+    assert reihenfolge[0] == 1
 
 
 def test_ohne_punktestand_bleibt_die_ftp_massgeblich():
@@ -173,20 +181,23 @@ def test_ohne_punktestand_bleibt_die_ftp_massgeblich():
 
 def test_wer_nicht_gestartet_ist_faehrt_nicht():
     race = rennen(n=6)
-    race.advance_to(300.0)  # nur Fahrer 0 ist unterwegs
-    assert race.state[0] != STATE_WAITING
-    assert np.all(race.state[1:] == STATE_WAITING)
-    assert race.dist_m[0] > 0
-    assert np.all(race.dist_m[1:] == 0.0)
+    race.advance_to(300.0)  # nur der erste Startplatz ist unterwegs
+    erster = int(np.argmin(race.start_offset_s))
+    andere = [i for i in range(6) if i != erster]
+    assert race.state[erster] != STATE_WAITING
+    assert np.all(race.state[andere] == STATE_WAITING)
+    assert race.dist_m[erster] > 0
+    assert np.all(race.dist_m[andere] == 0.0)
 
 
 def test_eigenzeit_ist_rennuhr_minus_startversatz():
     race = rennen(n=6)
     race.advance_to(2000.0)
     own = race.own_time(2000.0)
-    assert own[0] == pytest.approx(2000.0)
-    assert own[2] == pytest.approx(800.0)      # startet bei 1200 s
-    assert own[5] == pytest.approx(0.0)        # startet erst bei 3000 s
+    nach_start = list(np.argsort(race.start_offset_s))
+    assert own[nach_start[0]] == pytest.approx(2000.0)
+    assert own[nach_start[2]] == pytest.approx(800.0)   # startet bei 1200 s
+    assert own[nach_start[5]] == pytest.approx(0.0)     # startet erst bei 3000 s
     assert np.all(own >= 0.0)
 
 
@@ -1001,3 +1012,82 @@ def test_die_hoehentoleranz_wirkt_nur_im_hochgebirge():
 
     berg_gut, berg_schlecht = zeit("hochgebirge", 5000, 100.0), zeit("hochgebirge", 5000, 0.0)
     assert berg_schlecht > berg_gut, "oben muss die dünne Luft kosten"
+
+
+# ----------------------------------------------------------------------
+# Startgruppen
+# ----------------------------------------------------------------------
+def test_die_startgruppen_teilen_das_feld_in_drei():
+    """Gesetzte in die Mitte, zweite Gruppe rückwärts nach vorn."""
+    n = 300
+    g1, g2, g3 = _start_groups(n)
+    s1, s2, s3 = _start_slots(n)
+    assert len(g1) == len(g2) == len(g3) == 100
+
+    # Rang 1 bekommt Startplatz 101 (nullbasiert 100), Rang 100 den 200.
+    assert s1[0] == 100 and s1[-1] == 199
+    # Rang 101 startet als Hundertster, Rang 200 als Erster.
+    assert s2[0] == 99 and s2[-1] == 0
+    # Rang 201 bis 300 hängen hinten dran, in ihrer Reihenfolge.
+    assert s3[0] == 200 and s3[-1] == 299
+
+    alle = np.concatenate([s1, s2, s3])
+    assert sorted(alle.tolist()) == list(range(n)), "jeder Platz genau einmal"
+
+
+@pytest.mark.parametrize("n", [3, 6, 7, 40, 299, 300])
+def test_die_startplätze_bleiben_eine_permutation(n):
+    """Auch bei Feldern, die sich nicht durch drei teilen."""
+    plaetze = np.concatenate(_start_slots(n))
+    assert sorted(plaetze.tolist()) == list(range(n))
+    assert sum(len(g) for g in _start_groups(n)) == n
+
+
+def test_der_gesetzte_startet_in_der_mitte():
+    """Am fertigen Rennen nachgerechnet, nicht nur an der Formel."""
+    teams, riders = grosses_feld(300)
+    race = LiveRace(kurzstrecke(), riders, teams, RaceConfig(name="Test", seed=1))
+    wkg = np.array([r.w_per_kg for r in riders])
+    bibs = np.array([r.bib for r in riders])
+    rangliste = np.lexsort((bibs, wkg, np.zeros(300)))[::-1]
+    platz = race.start_offset_s / race.config.start_interval_s
+
+    assert platz[rangliste[0]] == 100, "der Gesetzte startet als 101."
+    assert platz[rangliste[99]] == 199
+    assert platz[rangliste[100]] == 99, "die zweite Gruppe rückwärts"
+    assert platz[rangliste[199]] == 0, "ihr Schwächster rollt zuerst los"
+    assert platz[rangliste[200]] == 200
+    assert platz[rangliste[299]] == 299
+
+
+# ----------------------------------------------------------------------
+# Schwankende Tagesform
+# ----------------------------------------------------------------------
+def test_die_tagesform_schwankt_um_den_startwert():
+    teams, riders = grosses_feld(40)
+    race = LiveRace(kurzstrecke(km=200, hm=500), riders, teams,
+                    RaceConfig(name="Test", seed=4, start_interval_s=0.0))
+
+    # Vor der ersten Messstelle steht der Startwert.
+    assert race.form_for(np.zeros(40, dtype=int)) == pytest.approx(race.form)
+
+    # Danach immer innerhalb der Spanne — und nie fortlaufend, sondern
+    # um den Startwert herum.
+    for passiert in (1, 3, 7):
+        jetzt = race.form_for(np.full(40, passiert))
+        abweichung = jetzt / race.form - 1.0
+        assert np.all(np.abs(abweichung) <= FORM_DRIFT + 1e-12)
+        assert np.any(abweichung > 0) and np.any(abweichung < 0)
+
+    # An verschiedenen Messstellen steht etwas anderes.
+    assert not np.allclose(race.form_for(np.full(40, 1)), race.form_for(np.full(40, 2)))
+
+
+def test_die_schwankung_ueberlebt_den_ruecksprung():
+    teams, riders = grosses_feld(40)
+    race = LiveRace(kurzstrecke(km=200, hm=500), riders, teams,
+                    RaceConfig(name="Test", seed=4, start_interval_s=0.0))
+    race.advance_to(3600.0)
+    frueh = race.form_at(1800.0).copy()
+    race.advance_to(4 * 3600.0)
+    assert np.array_equal(race.form_at(1800.0), frueh)
