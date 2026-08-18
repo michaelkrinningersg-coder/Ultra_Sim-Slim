@@ -376,8 +376,8 @@ Sichtbar wird der Schub als Chip neben dem Namen (`energiegeladen
 ### Hungerast
 
 Das Spiegelbild des Schubs, gleiche Mechanik, umgekehrtes Vorzeichen:
-**0,5 %** je Zeitmessung — halb so oft wie der Schub — und **10 bis 40
-Watt Abzug** auf die FTP bis zur nächsten Messstelle. Drei
+**0,1 %** je Zeitmessung — ein Zehntel der Schubwahrscheinlichkeit — und
+**10 bis 40 Watt Abzug** auf die FTP bis zur nächsten Messstelle. Drei
 Unterschiede:
 
 - Die Wahrscheinlichkeit **wächst mit der Fahrzeit** — nach fünfzehn
@@ -386,15 +386,20 @@ Unterschiede:
   entschieden wird an der Messstelle, und reproduzierbar bleibt es
   trotzdem, weil beides aus der Splitzeit folgt.
 - Verschont sind die **dreißig schwächsten** Fahrer statt der stärksten.
-- Die halbierte Grundwahrscheinlichkeit hält Glück und Pech im
-  Gleichgewicht. Bei einem Prozent kamen auf dem Alpenmarathon 218
-  Hungeräste gegen 89 Schübe zusammen — das Pech überwog deutlich, weil
-  die Wahrscheinlichkeit mit der Fahrzeit zusätzlich wächst.
+- Die niedrige Grundwahrscheinlichkeit macht ihn zum **Einschlag statt
+  zur Begleiterscheinung**. Der Zeitfaktor verdoppelt die Rate über die
+  langen Distanzen; bei einem Prozent überwog das Pech dadurch dauerhaft
+  das Glück.
 
-Gemessen mit 0,5 %: **44 Hungeräste** auf der Ostsee gegen 50 Schübe
-(9 h Renndauer), **108 gegen 89** auf dem Alpenmarathon (48 h). Die
-Zeitabhängigkeit bleibt sichtbar — über die lange Distanz überwiegt das
-Pech weiterhin, aber nicht mehr um das Doppelte.
+| Wahrscheinlichkeit | Ostsee (9 h) | Alpen (48 h) |
+|---|---|---|
+| 1,0 % | 82 gegen 50 Schübe | 218 gegen 89 |
+| 0,5 % | 44 gegen 50 | 108 gegen 89 |
+| **0,1 %** | **6 gegen 50** | **23 gegen 89** |
+
+Bei einem Zehntelprozent trifft es in einem Rennen mit dreihundert
+Startern eine Handvoll Fahrer — selten genug, dass eine Meldung im
+Ticker wirklich etwas heißt.
 
 ### Materialschaden
 

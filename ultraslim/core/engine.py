@@ -162,11 +162,13 @@ ENERGY_EXCLUDE_TOP = 30
 #: stärksten. Ein Zufallsschlag soll das Feld aufmischen, nicht den
 #: Letzten noch weiter nach hinten treten.
 #:
-#: Halb so wahrscheinlich wie der Schub: Bei einem Prozent kamen auf dem
-#: Alpenmarathon 218 Hungeräste zusammen und damit mehr als doppelt so
-#: viele wie Schübe — das Pech überwog das Glück deutlich, weil die
-#: Wahrscheinlichkeit mit der Fahrzeit noch wächst.
-HUNGER_EVENT_P = 0.005
+#: Ein Zehntel der Schubwahrscheinlichkeit. Bei einem Prozent kamen auf
+#: dem Alpenmarathon 218 Hungeräste gegen 89 Schübe zusammen, bei einem
+#: halben noch 108 gegen 89 — der Zeitfaktor verdoppelt die Rate über
+#: die langen Distanzen, und das Pech überwog dadurch dauerhaft. Mit
+#: einem Zehntelprozent ist der Hungerast das, was er sein soll: ein
+#: seltener Einschlag, keine Begleiterscheinung.
+HUNGER_EVENT_P = 0.001
 HUNGER_PENALTY_W = (10.0, 40.0)
 HUNGER_DOUBLE_AFTER_S = 15.0 * 3600.0
 HUNGER_SPARE_WEAKEST = 30
