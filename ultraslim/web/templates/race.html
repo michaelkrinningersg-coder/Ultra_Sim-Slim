@@ -425,7 +425,11 @@
               <td><span class="swatch" :style="`background:${board.leader.color}`"></span>
                   <span class="flag" :class="'flag-' + board.leader.nation"
                         :title="board.leader.nation"></span>
-                  <span x-text="board.leader.name"></span></td>
+                  <span x-text="board.leader.name"></span>
+                  <template x-if="board.leader.medal">
+                    <span class="medal" :class="'m' + board.leader.medal"
+                          :title="`${board.leader.medal}. der Gesamtwertung`"></span>
+                  </template></td>
               <td class="dim" x-text="board.leader.team"></td>
               <td class="time" x-text="hms(board.leader.t_s)"></td>
               <td class="gap faint">Führender</td>
@@ -444,7 +448,12 @@
               <td class="bib" x-text="row.bib"></td>
               <td><span class="swatch" :style="`background:${row.color}`"></span>
                   <span class="flag" :class="'flag-' + row.nation" :title="row.nation"></span>
-                  <span x-text="row.name"></span></td>
+                  <span x-text="row.name"></span>
+                  <!-- Gold, Silber, Bronze der Gesamtwertung. -->
+                  <template x-if="row.medal">
+                    <span class="medal" :class="'m' + row.medal"
+                          :title="`${row.medal}. der Gesamtwertung`"></span>
+                  </template></td>
               <td class="dim" x-text="row.team"></td>
               <td class="time" x-text="row.t_s === null ? '—' : hms(rowTime(row))"></td>
               <td class="gap" :class="row.gap_s > 0 ? 'pos' : (row.gap_s < 0 ? 'neg' : '')"

@@ -238,9 +238,16 @@ def create_app(data_dir: str | Path = "data") -> FastAPI:
                 for rid, ergebnis in store.load_season(season.id, season.races).items()
                 if rid != route_id
             }
-            punkte = {
-                s.rider.id: s.points
-                for s in rider_standings(vorher, riders, teams, season.races)
+            wertung = rider_standings(vorher, riders, teams, season.races)
+            punkte = {s.rider.id: s.points for s in wertung}
+            # Gold, Silber, Bronze für die ersten drei der Gesamtwertung.
+            # Ohne Punkte keine Medaille: Vor dem ersten Rennen stehen
+            # alle bei null, und wer dann vorn steht, verdankt das nur
+            # der Tie-Break-Regel.
+            medaillen = {
+                s.rider.id: platz
+                for platz, s in enumerate(wertung[:3], start=1)
+                if s.points > 0
             }
             rooms.add(
                 LiveRoom.start(
@@ -256,6 +263,7 @@ def create_app(data_dir: str | Path = "data") -> FastAPI:
                         season_points=punkte,
                     ),
                     store=store,
+                    medals=medaillen,
                 )
             )
         return RedirectResponse(f"/race/{race_id}", status_code=303)

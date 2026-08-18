@@ -837,6 +837,57 @@ def test_bergpunkte_landen_in_der_saisonwertung(client):
     assert "Bergwertung" in seite.text
 
 
+def test_vor_dem_ersten_rennen_gibt_es_keine_medaillen(token, laufendes_rennen):
+    """Alle stehen bei null Punkten — ein Führender wäre dort erfunden."""
+    bild = laufendes_rennen.get(f"/api/playback/{token}/frame").json()
+    zeilen = bild["board"]["rows"]
+    assert zeilen, "das Board darf nie leer sein"
+    assert all("medal" in z for z in zeilen), "das Feld muss es immer geben"
+    assert all(z["medal"] is None for z in zeilen)
+
+
+def test_die_ersten_drei_der_gesamtwertung_tragen_medaillen(client, tmp_path):
+    """Ende zu Ende: Rennen fahren, Wertung bilden, Punkte im Board."""
+    from ultraslim.core.rider import generate_pool
+    from ultraslim.core.season import Store, get_season, rider_standings
+
+    # Erst die Ostsee zu Ende fahren, damit eine Wertung entsteht.
+    client.post("/season/s2026/race/ostsee/start", follow_redirects=False)
+    tok = client.post(f"/api/race/{RACE_ID}/session").json()["token"]
+    horizont = client.get(f"/api/playback/{tok}/frame").json()["horizon_s"]
+    client.post(f"/api/playback/{tok}/control", json={"action": "seek", "value": horizont + 3600})
+
+    store = Store(tmp_path)
+    teams, riders = generate_pool()
+    season = get_season("s2026", store)
+    wertung = rider_standings(
+        store.load_season(season.id, season.races), riders, teams, season.races
+    )
+    assert all(s.points > 0 for s in wertung[:3]), "ohne Punkte keine Wertung"
+
+    # Dann das nächste Rennen starten: dort stehen die Medaillen.
+    client.post("/season/s2026/race/toskana/start", follow_redirects=False)
+    tok2 = client.post("/api/race/s2026~toskana/session").json()["token"]
+    client.post(f"/api/playback/{tok2}/control", json={"action": "seek", "value": 40 * 3600})
+
+    # Das Board zeigt ein Fenster von vierzig Zeilen — wer geprüft werden
+    # soll, muss also in den Fokus.
+    for platz, stand in enumerate(wertung[:3], start=1):
+        client.post(
+            f"/api/playback/{tok2}/control", json={"action": "focus", "value": stand.rider.id}
+        )
+        zeilen = client.get(f"/api/playback/{tok2}/frame").json()["board"]["rows"]
+        zeile = next(z for z in zeilen if z["entry_id"] == stand.rider.id)
+        assert zeile["medal"] == platz, f"{stand.rider.name} trägt die falsche Medaille"
+        # Und niemand sonst im Fenster trägt dieselbe.
+        traeger = [z["entry_id"] for z in zeilen if z["medal"] == platz]
+        assert traeger == [stand.rider.id]
+
+    besitzer = {s.rider.id for s in wertung[:3]}
+    fremde = [z["name"] for z in zeilen if z["medal"] and z["entry_id"] not in besitzer]
+    assert not fremde, "Medaillen gehören nur den ersten drei"
+
+
 def test_aero_und_profil_stehen_im_bild(token, laufendes_rennen):
     """Beide Werte müssen im Fokus, in der Zeile und in der Startliste stehen."""
     bild = laufendes_rennen.get(f"/api/playback/{token}/frame").json()

@@ -73,6 +73,13 @@ class LiveRoom:
     teams: list[Team]
     store: Store | None = None
 
+    #: Die ersten drei der Gesamtwertung **vor** diesem Rennen, als
+    #: ``entry_id -> 1|2|3``. Vor dem ersten Rennen der Saison steht die
+    #: Wertung bei null Punkten für alle — dann gibt es keine Medaillen,
+    #: denn ein Führender, den nur die Tie-Break-Regel bestimmt, ist
+    #: keiner.
+    medals: dict[int, int] = field(default_factory=dict)
+
     _lock: threading.RLock = field(default_factory=threading.RLock)
     _saved: bool = False
 
@@ -86,6 +93,7 @@ class LiveRoom:
         teams: list[Team],
         config: RaceConfig,
         store: Store | None = None,
+        medals: dict[int, int] | None = None,
     ) -> LiveRoom:
         return cls(
             race_id=race_id,
@@ -95,6 +103,7 @@ class LiveRoom:
             riders=riders,
             teams=teams,
             store=store,
+            medals=dict(medals or {}),
         )
 
     # ------------------------------------------------------------------
@@ -597,6 +606,9 @@ class ViewSession:
                 "entry_id": rider.id,
                 "bib": rider.bib,
                 "name": rider.name,
+                #: Gold, Silber, Bronze der Gesamtwertung — 1, 2 oder 3,
+                #: sonst gar nichts.
+                "medal": room.medals.get(rider.id),
                 "nation": rider.nation,
                 "team": room.teams[rider.team_id].name,
                 "color": room.teams[rider.team_id].color,

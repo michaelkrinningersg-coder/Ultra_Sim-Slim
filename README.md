@@ -679,6 +679,16 @@ Zwei Wertungen im Board:
   Ergebnisliste, und wer bei Rang 180 steht, will dort auch stehen. Die
   Spaltenköpfe bleiben beim Scrollen kleben.
 
+  Hinter dem Namen steht bei den **ersten drei der Gesamtwertung** ein
+  Punkt: Gold, Silber, Bronze. Gemeint ist der Stand **vor** diesem
+  Rennen — die Wertung, mit der das Feld angereist ist, nicht die, die
+  gerade entsteht. Vor dem ersten Rennen der Saison stehen alle bei null
+  Punkten; dann gibt es keine Punkte zu vergeben, denn ein Führender, den
+  nur die Tie-Break-Regel bestimmt, ist keiner. Bei acht Pixeln
+  entscheidet die Helligkeit und nicht der Farbton: Gold leuchtet, Silber
+  ist fast weiß, Bronze bleibt dunkel und rötlich. Der Titel am Punkt
+  nennt den Platz.
+
   Die angeheftete Kopfzeile zeigt den Halter der besten **gefahrenen**
   Zeit — auf ihn bezieht sich der Rückstand, und Rang eins ist dort
   regelmäßig jemand, dessen Uhr erst fünf Minuten läuft.
@@ -772,7 +782,7 @@ Kein Node, kein Build-Schritt. Alpine.js liegt als Datei bei.
 
 ```
 pip install -r requirements-dev.txt
-pytest -q                                   # 263 Tests
+pytest -q                                   # 265 Tests
 python -m ultraslim.app --no-browser        # Server ohne Browser
 ```
 
